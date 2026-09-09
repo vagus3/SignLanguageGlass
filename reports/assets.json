@@ -1,0 +1,32 @@
+{
+  "packages": {
+    "torch": "2.4.1",
+    "onnx": "1.16.2",
+    "onnxruntime": "1.19.2",
+    "scikit-learn": "1.5.2",
+    "vosk": "0.3.44",
+    "mediapipe": "0.10.21"
+  },
+  "wav_count": 22,
+  "synthetic_stt_only": true,
+  "human_speech_accuracy_evaluated": false,
+  "examples": [
+    {
+      "expected": "안녕하세요",
+      "recognized": "한편 계세요"
+    },
+    {
+      "expected": "병원이 어디예요?",
+      "recognized": "현재 어디 예요"
+    },
+    {
+      "expected": "감사합니다",
+      "recognized": "현재 한 이다"
+    }
+  ],
+  "font": [
+    "Galmuri11",
+    "Regular"
+  ],
+  "vosk_model_loaded": true
+}

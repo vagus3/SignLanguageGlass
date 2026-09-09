@@ -1,0 +1,48 @@
+# =============================================================
+#  라즈베리파이(안경 본체) 전용 의존성
+#
+#  설치:  pip install -r requirements-pi.txt
+#  ※ requirements.txt 대신 이걸 쓰세요. 둘 다 설치하면 안 됩니다.
+# =============================================================
+
+# ---- ★ 여기가 requirements.txt 와 다른 유일한 이유 ----------
+# mediapipe 0.10.21 에는 Linux aarch64(= 라즈베리파이 64bit) 휠이 없습니다.
+# PyPI 에 x86_64 / macOS / Windows 휠만 올라와 있어서 Pi 에서는
+# pip install 자체가 실패합니다.
+#
+# 0.10.15 에는 manylinux_2_17_aarch64 휠이 cp39/310/311/312 로 있습니다.
+# 그리고 solutions.holistic 이 삭제된 건 0.10.31 부터라 0.10.15 는 안전합니다.
+#
+#   설치 후 반드시 확인:
+#       python -c "import mediapipe as mp; print(mp.solutions.holistic)"
+mediapipe==0.10.15
+numpy==1.26.4
+# -------------------------------------------------------------
+
+# ---- 추론 런타임 ----
+# onnxruntime 은 aarch64 휠이 정상 제공됩니다.
+onnxruntime==1.19.2
+
+# ---- 오디오 ----
+# Pi 에서는 시스템 패키지가 먼저 필요합니다:
+#   sudo apt install -y libportaudio2 libatlas-base-dev libgl1
+sounddevice==0.4.7
+soundfile==0.12.1
+
+# ---- STT / TTS ----
+vosk==0.3.44
+webrtcvad-wheels==2.0.14
+pyttsx3==2.90
+# edge-tts 는 캐시 생성용이라 Pi 에는 필요 없습니다.
+# 개발 PC 에서 wav 를 뽑아 assets/tts_cache/ 를 통째로 복사해 오세요.
+
+# ---- HUD ----
+pillow==10.4.0
+
+# ---- ★ OLED 직결 (브리지 MCU 없이 GPIO 로) ----
+# config.DISPLAY_BACKEND = "pi" 또는 main.py --display pi
+# 사전 작업: sudo raspi-config -> Interface Options -> SPI 활성화
+luma.oled==3.13.0
+
+# pyserial 은 Pi 직결 구조에서는 필요 없습니다.
+# (PC + 아두이노 브리지 구조로 되돌릴 때만 requirements.txt 를 쓰세요)

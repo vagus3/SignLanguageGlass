@@ -1,0 +1,26 @@
+# ---- OS / 편집기 ----
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---- 파이썬 ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ---- 용량이 크거나 기계가 만드는 산출물 ----
+# 데이터·모델은 저장소가 아니라 각자 PC 에 둡니다.
+# .gitkeep 은 빈 디렉터리 구조만 남기기 위한 것이라 예외로 둡니다.
+data/raw/*
+!data/raw/.gitkeep
+data/processed/
+models/*
+!models/.gitkeep
+assets/tts_cache/*
+!assets/tts_cache/.gitkeep
+
+# 폰트는 라이선스가 제각각이라 각자 내려받게 합니다.
+assets/fonts/*
+!assets/fonts/.gitkeep

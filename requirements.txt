@@ -1,0 +1,46 @@
+# =============================================================
+#  청각장애인 양방향 소통 스마트글래스 - 핵심 의존성
+#  Python 3.11 권장 (mediapipe 0.10.21 은 3.12 까지 지원)
+#
+#  설치:  pip install -r requirements.txt
+# =============================================================
+
+# ---- 절대 버전을 올리지 마세요 -------------------------------
+# mediapipe 0.10.31+ 에는 solutions.holistic 이 삭제되어 있습니다.
+mediapipe==0.10.21
+# mediapipe 0.10.15+ 는 numpy<2 를 요구합니다.
+numpy==1.26.4
+# -------------------------------------------------------------
+
+# OpenCV 는 따로 설치하지 마세요.
+# mediapipe 가 opencv-contrib-python 을 자동으로 끌어옵니다.
+# opencv-python 을 추가로 깔면 두 패키지가 충돌합니다.
+
+# ---- 추론 런타임 ----
+# 학습 프레임워크(torch / tensorflow)는 여기 없습니다.
+# 안경에서 돌아가는 건 onnxruntime 하나뿐입니다.
+#   torch  ~200MB / tensorflow ~600MB  vs  onnxruntime ~50MB
+#   둘을 한 프로세스에 올리면 RAM 1GB 에 시작만 수 초 걸립니다.
+# 학습·변환은 requirements-train.txt 를 따로 설치해서 하세요.
+onnxruntime==1.19.2
+
+# ---- 오디오 입력 ----
+# PyAudio 대신 sounddevice 사용 (윈도우 빌드 에러 회피)
+sounddevice==0.4.7
+soundfile==0.12.1
+
+# ---- STT (오프라인 · 스트리밍) ----
+# ★ 0.3.45 로 올리지 마세요. vosk 메인테이너가 0.3.45 부터 macOS 휠을
+#   배포하지 않아 mac 에서 설치가 실패합니다(Windows/Linux 만 있음).
+#   0.3.44 가 mac 을 포함해 설치되는 마지막 버전입니다.
+vosk==0.3.44
+# webrtcvad 원본은 윈도우에서 컴파일이 필요합니다. wheels 배포판을 씁니다.
+webrtcvad-wheels==2.0.14
+
+# ---- TTS ----
+pyttsx3==2.90          # 오프라인, 지연 거의 0
+edge-tts==6.1.12       # 고품질 한국어. 사전 캐싱용으로만 사용
+
+# ---- HUD 렌더링 / 하드웨어 브리지 ----
+pillow==10.4.0
+pyserial==3.5          # Step 2: PC -> MCU -> OLED 시리얼 브리지

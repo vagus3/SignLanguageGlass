@@ -1,0 +1,23 @@
+# =============================================================
+#  학습 / 변환 전용 의존성  (개발 PC 에서만, 필요할 때만)
+#
+#  안경 실행에는 필요 없습니다. requirements.txt 만으로 돌아갑니다.
+#  설치:  pip install -r requirements-train.txt
+# =============================================================
+
+# ---- 공통 ----
+scikit-learn==1.5.2
+pandas==2.2.3           # 매니페스트/클래스 분포 다루기
+tqdm==4.66.5            # 50만 클립 전처리 진행률
+
+# ---- PyTorch 계열 모델을 다룰 때 ----
+# Windows / macOS 모두 PyPI 기본 휠이 CPU 빌드라 별도 index 불필요
+torch==2.4.1
+
+# TensorFlow/tf2onnx는 넣지 않습니다. tf2onnx 1.16.1의 protobuf~=3.20과
+# mediapipe 0.10.21의 protobuf>=4.25.3 요구가 충돌합니다. 학습과 변환은
+# PyTorch -> ONNX 한 경로로 통일합니다.
+
+# ---- ONNX 변환/검증 ----
+onnx==1.16.2
+onnxruntime==1.19.2
