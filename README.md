@@ -36,6 +36,8 @@
 [`PROJECT_REVIEW.md`](PROJECT_REVIEW.md)에 정리했습니다.
 경진대회 당일 전체/폴백 모드와 2인 역할은 [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md)를 따릅니다.
 AI Hub 3D 활용 및 이전 검토 정정은 [`AIHUB_TRANSFER.md`](AIHUB_TRANSFER.md)에 정리했습니다.
+팀원이 동일 환경을 구성하고 filekey 단위로 내려받는 절차는
+[`AIHUB_TEAM_RUNBOOK.md`](AIHUB_TEAM_RUNBOOK.md)에 정리했습니다.
 
 ---
 
