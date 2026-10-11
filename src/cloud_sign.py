@@ -21,12 +21,19 @@ class SegmentRecorder:
         self.frames = []
         self.error = None
         self.started = 0
+        # Recent frames while idle, so automatic starts can include the onset.
+        self.recent = deque(maxlen=64)
 
-    def start(self):
+    def start(self, pre_roll=0.0):
         with self.lock:
-            self.frames, self.error = [], None
-            self.started = time.monotonic()
+            latest = self.recent[-1][0] if self.recent else None
+            self.frames = ([f for f in self.recent if f[0] >= latest - pre_roll]
+                           if pre_roll > 0 and latest is not None else [])
+            self.error = None
+            span = self.frames[-1][0] - self.frames[0][0] if self.frames else 0.0
+            self.started = time.monotonic() - span
             self.active = True
+            self.recent.clear()
 
     def cancel(self):
         with self.lock:
@@ -35,6 +42,12 @@ class SegmentRecorder:
     def add(self, points, mask, timestamp, image_size, world=None, world_mask=None):
         with self.lock:
             if not self.active:
+                if self.recent and (timestamp <= self.recent[-1][0]
+                                    or tuple(image_size) != self.recent[-1][3]
+                                    or (world is None) != (self.recent[-1][4] is None)):
+                    self.recent.clear()
+                self.recent.append((timestamp, points.copy(), mask.copy(), tuple(image_size),
+                                    None if world is None else (world.copy(), world_mask.copy())))
                 return
             if time.monotonic() - self.started > self.max_seconds or len(self.frames) >= MAX_FRAMES:
                 self.active, self.frames, self.error = False, [], "too_long"

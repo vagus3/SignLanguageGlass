@@ -44,7 +44,7 @@ def resolve_camera_plan(no_sign, fixed_caption, sign_camera=None, face_camera=No
 # ---------------------------------------------------------------- 비전 스레드
 class VisionThread(threading.Thread):
     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
-                 segment_recorder=None, pose_3d=False):
+                 segment_recorder=None, pose_3d=False, segmenter=None, segment_events=None):
         # daemon 을 클래스 속성으로 두면 Thread.daemon 프로퍼티를 가려서
         # 내부 _daemonic 플래그와 어긋납니다. 생성자로 넘겨야 안전합니다.
         super().__init__(name="vision", daemon=True)
@@ -53,6 +53,7 @@ class VisionThread(threading.Thread):
         self.camera_index = camera_index
         self.segment_recorder = segment_recorder
         self.pose_3d = pose_3d
+        self.segmenter, self.segment_events = segmenter, segment_events
         from src.latency import NullTracker
         self.stats = stats or NullTracker()
         # ★ 이름을 _stop 으로 두면 안 됩니다.
@@ -112,6 +113,11 @@ class VisionThread(threading.Thread):
                 points, mask = from_mediapipe(res)
                 world = world_from_mediapipe(res, (w, h)) if self.pose_3d else (None, None)
                 self.segment_recorder.add(points, mask, t_cap, (w, h), *world)
+                if self.segmenter is not None:
+                    event = self.segmenter.update(points, mask, t_cap,
+                                                  self.segment_recorder.active, (w, h))
+                    if event:
+                        self.segment_events.put("auto_" + event)
 
             word, word_t = None, 0.0
             if predictor is not None:
@@ -246,6 +252,8 @@ def main():
                     help="cloud: SPACE/c 또는 표준입력 start/stop/cancel로 문장 구간 지정")
     ap.add_argument("--pose-3d", action="store_true",
                     help="cloud: 3D 좌표도 전송 (서버가 --features 3d 체크포인트일 때)")
+    ap.add_argument("--auto-segment", action="store_true",
+                    help="cloud: 손 움직임으로 문장 구간 자동 시작/종료 (SPACE도 계속 사용 가능)")
     ap.add_argument("--fixed-caption", action="store_true",
                     help="얼굴 추적 없이 HUD 하단 고정 자막 (카메라 불필요)")
     ap.add_argument("--sign-camera", type=int, default=None, metavar="INDEX",
@@ -280,7 +288,7 @@ def main():
     # 유선 이어폰으로 들을 때는 --no-gate 로 꺼도 됩니다.
     gate = NullGate() if a.no_gate else AudioGate(C.AUDIO_GATE_TAIL_SEC)
 
-    cloud = recorder = None
+    cloud = recorder = segmenter = None
     commands = queue.Queue()
     cloud_status = ""
     if a.sign_backend == "cloud" and not a.no_sign:
@@ -290,6 +298,9 @@ def main():
         except ValueError as e:
             ap.error(str(e))
         recorder = SegmentRecorder()
+        if a.auto_segment:
+            from src.segmenter import ActivitySegmenter
+            segmenter = ActivitySegmenter()
         cloud.start()
         cloud_status = "수어 입력 대기"
         if a.cloud_controls == "stdin":
@@ -310,7 +321,7 @@ def main():
     vq = queue.Queue(maxsize=1) if need_vision else None
     vision = (VisionThread(vq, enable_sign=not a.no_sign and cloud is None, stats=stats,
                            camera_index=sign_index, segment_recorder=recorder,
-                           pose_3d=a.pose_3d)
+                           pose_3d=a.pose_3d, segmenter=segmenter, segment_events=commands)
               if need_vision else None)
     if vision:
         vision.start()
@@ -352,7 +363,13 @@ def main():
         nonlocal cloud_status
         if cloud is None:
             return
-        if command == "cancel":
+        automatic = command.startswith("auto_")
+        command = command.removeprefix("auto_")
+        if command == "discard":
+            # Too short to be a sentence; unlike cancel, keep any pending translation.
+            recorder.cancel()
+            cloud_status = "수어 입력 대기"
+        elif command == "cancel":
             recorder.cancel()
             cloud.cancel()
             cloud_status = "수어 입력 취소"
@@ -360,7 +377,7 @@ def main():
             if cloud.busy:
                 cloud_status = "처리 중입니다"
             elif not recorder.active:
-                recorder.start()
+                recorder.start(pre_roll=0.3 if automatic else 0.0)
                 cloud_status = "수어 녹화 중"
         elif command == "stop":
             if not recorder.active:
