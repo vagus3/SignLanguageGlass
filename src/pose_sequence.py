@@ -189,8 +189,13 @@ def world_from_mediapipe(results, image_size, *, input_is_mirrored=False):
     return _clean_world(points, mask, input_is_mirrored)
 
 
-def world_from_openpose(person, *, input_is_mirrored=False):
-    """AI Hub *_keypoints_3d (camera frame, meters). Absent fields stay masked."""
+def world_from_openpose(person, *, input_is_mirrored=False, world_to_camera=None):
+    """Read 3D points; optionally apply an explicit rigid world-to-camera matrix.
+
+    Without a matrix the caller must supply camera-frame points (x right, y
+    down, z away). Dataset adapters must verify that convention, not infer it
+    from the presence of OpenPose fields. Units are preserved.
+    """
     points, mask = np.zeros((JOINTS, 3), np.float32), np.zeros(JOINTS, bool)
     for start, name in [(0, "hand_left_keypoints_3d"), (21, "hand_right_keypoints_3d")]:
         flat = person.get(name, [])
@@ -204,6 +209,15 @@ def world_from_openpose(person, *, input_is_mirrored=False):
             p = a[OP_POSE[name]]
             points[i], mask[i] = p[:3], p[3] > 0
         points[42], mask[42] = (points[43] + points[44]) / 2, mask[43] and mask[44]
+    if world_to_camera is not None:
+        matrix = np.asarray(world_to_camera, dtype=np.float64)
+        if matrix.shape != (3, 4) or not np.isfinite(matrix).all():
+            raise ValueError("world_to_camera must be a finite 3x4 [R|t] matrix")
+        rotation = matrix[:, :3]
+        if (not np.allclose(rotation @ rotation.T, np.eye(3), atol=1e-5, rtol=0)
+                or not np.isclose(np.linalg.det(rotation), 1, atol=1e-5, rtol=0)):
+            raise ValueError("world_to_camera rotation must be orthonormal with determinant +1")
+        points = points @ rotation.T + matrix[:, 3]
     return _clean_world(points, mask, input_is_mirrored)
 
 

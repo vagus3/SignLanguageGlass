@@ -52,14 +52,28 @@ class ActivitySegmenter:
             self.rest_line = rest / aspect
             valid &= wrists[:, 1] < rest
             palms = np.full(2, PALM_PER_SHOULDER * width)
+        # Wrist-relative joints preserve articulation and rotation. Using several
+        # joints (rather than a maximum) avoids one noisy fingertip dominating.
+        hands = p[:42].reshape(2, 21, 2)
+        joint_valid = m[:42].reshape(2, 21)
+        local = hands - wrists[:, None, :]
         raw = 0.0
         if self.previous is not None:
-            before, old_wrists, old_valid = self.previous
+            before, old_wrists, old_valid, old_local, old_joint_valid = self.previous
             dt, both = t - before, valid & old_valid
             if 0 < dt <= 0.25 and both.any():
                 raw = float(np.max(np.linalg.norm(wrists - old_wrists, axis=1)[both]
                                    / palms[both]) / dt)
-        self.previous = (t, wrists, valid)
+                for hand in np.flatnonzero(both):
+                    common = joint_valid[hand] & old_joint_valid[hand]
+                    common[0] = False  # The wrist is already measured above.
+                    if common.sum() >= 4:
+                        motion = np.linalg.norm(local[hand] - old_local[hand], axis=1)[common]
+                        # Mean of the four most active joints supports one moving
+                        # finger while suppressing isolated tracking spikes.
+                        articulation = np.sort(motion)[-4:].mean() / palms[hand] / dt
+                        raw = max(raw, float(articulation))
+        self.previous = (t, wrists, valid, local, joint_valid.copy())
         self.speed = self.speed + self.smoothing * (raw - self.speed) if valid.any() else 0.0
         return bool(valid.any()), self.speed
 

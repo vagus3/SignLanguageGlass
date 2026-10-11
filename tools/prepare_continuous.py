@@ -5,6 +5,10 @@ Input JSON: {"clips": [{"id":..., "keypoints_dir":..., "image_size":[w,h],
 "fps":30, "signer_id":..., "session_id":..., "group_id":...,
 "glosses":["label",...], "text":"Korean reference", "split":"train"}]}
 glosses may be null, which makes the clip ineligible for CTC training.
+--with-3d requires coordinate_frame_3d="camera" or "world" at the top level
+or per clip. "world" also requires a 3x4 world_to_camera=[R|t] matrix,
+with p_camera = R @ p_world + t. Camera axes: x right, y down, z away.
+Raw camparam matrices are not interpreted without a verified convention.
 """
 import argparse
 import json
@@ -41,6 +45,16 @@ def prepare(annotation_path, out, with_world=False):
             fps = row.get("fps", source.get("fps"))
             if size is None or fps is None or not np.isfinite(fps) or fps <= 0:
                 raise ValueError(f"{identity}: explicit image_size and fps required")
+            frame_3d = row.get("coordinate_frame_3d", source.get("coordinate_frame_3d"))
+            transform = row.get("world_to_camera", source.get("world_to_camera"))
+            if with_world:
+                if frame_3d not in ("camera", "world"):
+                    raise ValueError(f"{identity}: --with-3d requires coordinate_frame_3d "
+                                     "('camera' or 'world'); do not assume AI Hub is camera-aligned")
+                if frame_3d == "world" and transform is None:
+                    raise ValueError(f"{identity}: world coordinates require world_to_camera [R|t]")
+                if frame_3d == "camera" and transform is not None:
+                    raise ValueError(f"{identity}: camera coordinates must not have world_to_camera")
             frames = []
             for p in folder.glob("*_keypoints.json"):
                 match = re.search(r"_(\d+)_keypoints\.json$", p.name)
@@ -61,7 +75,8 @@ def prepare(annotation_path, out, with_world=False):
                 masks.append(mask)
                 if with_world:
                     world, world_mask = world_from_openpose(
-                        person, input_is_mirrored=row.get("input_is_mirrored", False))
+                        person, input_is_mirrored=row.get("input_is_mirrored", False),
+                        world_to_camera=transform)
                     worlds.append(world)
                     world_masks.append(world_mask)
             positions = np.array([n for n, _ in frames])
@@ -76,10 +91,13 @@ def prepare(annotation_path, out, with_world=False):
             for key in ("signer_id", "session_id", "group_id"):
                 if not row.get(key):
                     raise ValueError(f"{identity}: missing {key}")
-            rows.append({k: v for k, v in {**row, "file": filename,
+            provenance = ({"coordinate_frame_3d": "camera",
+                           "source_coordinate_frame_3d": frame_3d,
+                           "source_world_to_camera": transform} if with_world else {})
+            rows.append({k: v for k, v in {**row, **provenance, "file": filename,
                                          "frames": len(frames),
                                          "duration_seconds": float(timestamps[-1])}.items()
-                         if k != "keypoints_dir"})
+                         if k not in ("keypoints_dir", "world_to_camera")})
             if row.get("glosses") is None:
                 missing.append({"id": identity, "reason": "ordered glosses unavailable"})
         if not rows:

@@ -24,7 +24,7 @@ def moving(t):
     return .4 + .1 * np.sin(2 * np.pi * 1.5 * t)
 
 
-def simulate(script, seconds, *, manual=(), busy=False, scene=None, **options):
+def simulate(script, seconds, *, manual=(), busy=False, scene=None, motion=None, **options):
     """script(t) -> frame() arguments; main-loop behaviour is applied on the next frame."""
     scene = scene or {}
     segmenter, recorder = ActivitySegmenter(**options), SegmentRecorder()
@@ -45,6 +45,8 @@ def simulate(script, seconds, *, manual=(), busy=False, scene=None, **options):
                 else:
                     segments.append(recorder.finish()[0])
         points, mask = frame(*script(t), **scene)
+        if motion is not None:
+            motion(points, mask, t)
         recorder.add(points, mask, t, (640, 640))
         event = segmenter.update(points, mask, t, recorder.active, (640, 640))
         if event:
@@ -111,6 +113,38 @@ assert [e for _, e in events] == ["start"] and len(segments) == 1, events
 events, _ = simulate(lambda t: (moving(t), True), 3, busy=True)
 assert all(e == "start" for _, e in events)
 assert all(b - a > 1.0 for (a, _), (b, _) in zip(events, events[1:])), events
+# Finger articulation must start and sustain capture even with fixed wrists.
+def articulate(points, mask, t):
+    if 1 <= t < 4:
+        points[[4, 8, 12, 16, 20], 0] += .06 * np.sin(12 * t)
+
+
+for scene in ({}, webcam):
+    events, segments = simulate(lambda t: (.4, True), 7, scene=scene, motion=articulate)
+    assert [e for _, e in events] == ["start", "stop"], events
+    assert events[0][0] < 2 and events[1][0] > 5, events
+    assert len(segments) == 1
+
+# A hand rotating about a stationary wrist also counts as activity.
+def rotate(points, mask, t):
+    angle = 1.2 * np.sin(10 * t)
+    rotation = np.array([[np.cos(angle), -np.sin(angle)],
+                         [np.sin(angle), np.cos(angle)]])
+    points[:21] = (points[:21] - points[0]) @ rotation.T + points[0]
+
+
+events, _ = simulate(lambda t: (.4, True), 4, motion=rotate)
+assert [e for _, e in events] == ["start"], events
+
+# A missing joint's arbitrary coordinates must never create motion.
+def missing_tip(points, mask, t):
+    mask[8] = False
+    points[8, 0] += .3 * np.sin(12 * t)
+
+
+events, _ = simulate(lambda t: (.4, True), 4, motion=missing_tip)
+assert events == [], events
+
 import cv2  # noqa: E402
 from main import draw_segment_overlay  # noqa: E402
 segmenter = ActivitySegmenter()

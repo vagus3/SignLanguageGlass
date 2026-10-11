@@ -50,10 +50,35 @@ with tempfile.TemporaryDirectory() as td:
         person=json.loads(path.read_text())["people"]
         person["hand_left_keypoints_3d"]=np.tile([.1,.2,2,1],(21,1)).ravel().tolist()
         path.write_text(json.dumps({"people":person}))
+    try:
+        prepare(annotation,root/"unknown3d",with_world=True)
+        raise AssertionError("Unknown 3D coordinate frame accepted")
+    except ValueError as error:
+        assert "coordinate_frame_3d" in str(error)
+    assert not (root/"unknown3d").exists()
+    source["coordinate_frame_3d"]="camera"  # Synthetic points use camera axes.
+    annotation.write_text(json.dumps(source))
     report=prepare(annotation,root/"out3d",with_world=True)
     assert report["version"]==VERSION_3D
     rows,_=load_dataset(root/"out3d/manifest.json")
     assert rows[0]["sequence"].world_mask[:,:21].all() and not rows[0]["sequence"].world_mask[:,21:].any()
+    source["coordinate_frame_3d"]="world"
+    source["world_to_camera"]=[[0,0,1,.3],[0,1,0,-.2],[-1,0,0,.5]]
+    annotation.write_text(json.dumps(source))
+    report=prepare(annotation,root/"transformed3d",with_world=True)
+    transformed=PoseSequence.load(root/"transformed3d/clip_000000.npz")
+    assert np.allclose(transformed.world[:,:21],[2.3,0,.4])
+    assert not transformed.world[:,21:].any()
+    assert report["clips"][0]["coordinate_frame_3d"]=="camera"
+    assert report["clips"][0]["source_world_to_camera"]==source["world_to_camera"]
+    source["coordinate_frame_3d"]="camera"
+    annotation.write_text(json.dumps(source))
+    try:
+        prepare(annotation,root/"doubletransform",with_world=True)
+        raise AssertionError("Camera-frame points accepted with an extrinsic transform")
+    except ValueError as error:
+        assert "must not have world_to_camera" in str(error)
+    assert not (root/"doubletransform").exists()
     del source["image_size"]
     annotation.write_text(json.dumps(source))
     try:

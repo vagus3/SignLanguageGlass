@@ -99,6 +99,23 @@ assert np.allclose(world_from_openpose(person, input_is_mirrored=True)[0], frame
                    atol=1e-6)
 assert not world_from_openpose({})[1].any()
 
+# Transform common-world coordinates before mirror correction; preserve masks.
+transform = np.c_[R, [.3, -.2, .5]]
+converted, converted_mask = world_from_openpose(person, world_to_camera=transform)
+expected = frame @ R.T + transform[:, 3]
+assert converted_mask.all() and np.allclose(converted, expected, atol=1e-6)
+mirrored, _ = world_from_openpose(person, world_to_camera=transform, input_is_mirrored=True)
+assert np.allclose(mirrored, expected * [-1, 1, 1], atol=1e-6)
+empty, empty_mask = world_from_openpose({}, world_to_camera=transform)
+assert not empty_mask.any() and not empty.any(), "Translation must not populate missing joints"
+for bad in (np.eye(4), np.zeros((3, 4)), np.c_[np.diag([-1, 1, 1]), np.zeros(3)],
+            np.full((3, 4), np.nan)):
+    try:
+        world_from_openpose(person, world_to_camera=bad)
+        raise AssertionError("Invalid extrinsic matrix accepted")
+    except ValueError:
+        pass
+
 # Checkpoints remember their feature set; a 3D model refuses 2D input.
 with tempfile.TemporaryDirectory() as td:
     model = CtcRecognizer(3, hidden=8, feature_set="3d")
