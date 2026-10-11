@@ -6,6 +6,7 @@ try:
 except ImportError:
     sys.exit(77)
 from concurrent.futures import ThreadPoolExecutor
+from fastapi import HTTPException
 import hashlib
 import io
 import json
@@ -115,6 +116,22 @@ req=TranslationRequest(**payload)
 with ThreadPoolExecutor(max_workers=3) as pool:
     outcomes=list(pool.map(lambda _:concurrent.process(req),range(3)))
 assert r.count==1 and outcomes[0]==outcomes[1]==outcomes[2]
+class SlowRecognizer(MockRecognizer):
+    def predict(self,sequence):
+        time.sleep(.5)
+        return super().predict(sequence)
+bounded=TranslationService(SlowRecognizer(),MockTranslator(),{"안녕하세요":"안녕하세요"},
+                           mock=True,max_waiters=1)
+def attempt(_):
+    try:
+        bounded.process(req)
+        return 200
+    except HTTPException as e:
+        return e.status_code
+with ThreadPoolExecutor(max_workers=3) as pool:
+    codes=sorted(pool.map(attempt,range(3)))
+assert codes==[200,200,429], f"Duplicate waiters must be bounded: {codes}"
+assert bounded.waiting==0
 unmapped=TranslationService(MockRecognizer(),MockTranslator(),{})
 assert unmapped.process(req)["status"]=="uncertain"
 

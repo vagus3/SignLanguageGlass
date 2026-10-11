@@ -109,7 +109,7 @@ class MockTranslator:
 
 class TranslationService:
     def __init__(self, recognizer=None, translator=None, mapping=None, *, mock=False,
-                 ttl=300, cache_size=1024, clock=time.monotonic):
+                 ttl=300, cache_size=1024, max_waiters=8, clock=time.monotonic):
         self.recognizer = recognizer
         self.translator = translator
         self.mapping = mapping or {}
@@ -119,6 +119,8 @@ class TranslationService:
         self.cache = OrderedDict()
         self.inflight = {}
         self.sessions = set()
+        # Duplicate retries block a worker thread while waiting; bound them too.
+        self.max_waiters, self.waiting = max_waiters, 0
 
     @property
     def speech_enabled(self):
@@ -152,6 +154,9 @@ class TranslationService:
                 digest, event = self.inflight[key]
                 if digest != fingerprint:
                     raise HTTPException(409, "Segment ID reused with different data")
+                if self.waiting >= self.max_waiters:
+                    raise HTTPException(429, "Too many duplicate requests; retry later")
+                self.waiting += 1
             else:
                 if request.session_id in self.sessions or len(self.inflight) >= 8:
                     raise HTTPException(429, "A request is already processing; retry later")
@@ -160,7 +165,12 @@ class TranslationService:
                 self.sessions.add(request.session_id)
                 owner = True
         if not owner:
-            if not event.wait(30):
+            try:
+                finished = event.wait(30)
+            finally:
+                with self.lock:
+                    self.waiting -= 1
+            if not finished:
                 raise HTTPException(503, "Original request still processing")
             with self.lock:
                 if key in self.cache:
