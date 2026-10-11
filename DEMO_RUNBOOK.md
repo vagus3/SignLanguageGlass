@@ -13,9 +13,46 @@
 | B. 한 카메라 | 한 화면에서 손·얼굴 90% 이상, 처리량 충분 | `python main.py --display serial --stats reports/live.csv` |
 | C. 안정형 | 얼굴 카메라 또는 AR 정렬 불안정 | `python main.py --fixed-caption --display serial --stats reports/live.csv` |
 | D. 녹화 폴백 | 라이브 장치 복구가 30초를 넘음 | 같은 장치로 미리 찍은 무편집 60~90초 영상 재생 |
+| E. 노트북 웹캠 연속 번역 | 안경 장치 대신 노트북 한 대로 시연 | 아래 "노트북 웹캠 시연" 절 |
 
 모드 A/B의 얼굴 앵커가 흔들려도 음성 자막 자체는 유지된다. 카메라가 전부 실패하면 모드 C는
 `--no-sign --fixed-caption`으로 음성→자막만 계속 시연할 수 있다.
+
+## 노트북 웹캠 시연 (연속 문장 번역)
+
+노트북 내장 웹캠이 수어자를 정면으로 봅니다. 안경 1인칭과 달리 어깨가 보이므로
+`--viewpoint webcam`(기본값)은 **손을 기준선 위로 올리면 문장 시작, 내리면 문장 끝**으로
+구간을 나눕니다. 키보드 위에서 움직이는 손은 무시합니다.
+
+~~~bash
+# 터미널 1: 같은 노트북에서 서버 (모의 또는 학습한 체크포인트)
+.venv/bin/python -m src.sign_server --mock
+# .venv/bin/python -m src.sign_server --checkpoint models/continuous/ctc.pt --mapping mapping.json
+
+# 터미널 2: 웹캠 + 자동 구간
+.venv/bin/python main.py --sign-backend cloud --auto-segment --viewpoint webcam \
+  --fixed-caption --display preview --stats reports/webcam.csv
+~~~
+
+- **얼굴 앵커 끄기**: 웹캠 한 대는 수어자 본인 얼굴을 보므로 `--fixed-caption`을 씁니다.
+  상대 얼굴 말풍선은 안경/전방 카메라 구성에서만 의미가 있습니다.
+- **화면 구도**: 머리부터 가슴 아래까지, 양 어깨가 모두 보이게 앉습니다. 수어하는 손이
+  프레임 안에 있어야 합니다. 화면에 다른 사람이 들어오지 않게 합니다.
+- **기준선 맞추기**: 프리뷰의 파란 선(`hands down = end`)이 가슴 아래와 책상 사이에
+  오도록 앉는 위치를 조정합니다. 키보드·무릎 위 손이 선 아래에 있어야 합니다. 맞지 않으면
+  `config.SEGMENT_REST_RATIO`(기본 1.0)를 0.8~1.3에서 바꿉니다. 당일 즉흥 변경은 금지이므로
+  리허설 때 정합니다.
+- **문장 사이**: 손을 선 아래로 1초 정도 내립니다. 우측 상단이 `AUTO REC` → `AUTO READY`로
+  바뀌면 전송된 것입니다. 오검출되면 `c`로 취소하고, 자동이 불안하면 SPACE 수동으로 바꿉니다.
+- **조명**: macOS는 OpenCV 노출 고정이 안 됩니다. 정면을 밝게 해 빠른 손의 모션 블러를 줄입니다.
+- **데이터 시점 일치**: 시연 모델의 검증 데이터는 같은 노트북 웹캠으로
+  `python -m src.collect_continuous --signer ... --session ...`(필요하면 `--with-3d`)로 모읍니다.
+  정면 시점은 AI Hub 정면 촬영과 가깝지만, 같은 카메라 데이터로 확인하기 전에는
+  정확도를 주장하지 않습니다.
+- **정직한 표시**: 모의 서버와 미검증 모델은 텍스트만 표시하고 음성을 내지 않습니다.
+
+리허설 기준: 시연 문장 각 10회에서 구간 누락·잘못 나뉨·키보드 오검출 횟수와 번역 결과를
+기록합니다. 구간 오류가 2회 이상이면 당일 모드는 SPACE 수동으로 정합니다.
 
 ## 행사 48시간 전 동결 기준
 

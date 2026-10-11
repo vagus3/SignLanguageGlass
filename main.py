@@ -41,6 +41,24 @@ def resolve_camera_plan(no_sign, fixed_caption, sign_camera=None, face_camera=No
     return need_vision, separate_face, sign_index
 
 
+def draw_segment_overlay(cv2, frame, recorder, segmenter):
+    """Recording state and, for webcam auto-segmentation, the rest line.
+
+    Hands below the line (keyboard, lap) are ignored; drawn after any preview
+    flip, which a horizontal line is unaffected by.
+    """
+    h, w = frame.shape[:2]
+    line = getattr(segmenter, "rest_line", None)
+    if line is not None and 0 < line < 1:
+        y = int(line * h)
+        cv2.line(frame, (0, y), (w, y), (255, 200, 0), 2)
+        cv2.putText(frame, "hands down = end", (16, max(20, y - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 200, 0), 2)
+    mode = "AUTO " if segmenter is not None else ""
+    state, color = (("REC", (0, 0, 255)) if recorder.active else ("READY", (0, 255, 255)))
+    cv2.putText(frame, mode + state, (w - 200, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+
+
 # ---------------------------------------------------------------- 비전 스레드
 class VisionThread(threading.Thread):
     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
@@ -254,6 +272,9 @@ def main():
                     help="cloud: 3D 좌표도 전송 (서버가 --features 3d 체크포인트일 때)")
     ap.add_argument("--auto-segment", action="store_true",
                     help="cloud: 손 움직임으로 문장 구간 자동 시작/종료 (SPACE도 계속 사용 가능)")
+    ap.add_argument("--viewpoint", choices=["webcam", "glasses"], default=C.SIGN_VIEWPOINT,
+                    help="수어 카메라 시점: webcam=노트북 정면(손을 내리면 문장 끝), "
+                         "glasses=안경 1인칭")
     ap.add_argument("--fixed-caption", action="store_true",
                     help="얼굴 추적 없이 HUD 하단 고정 자막 (카메라 불필요)")
     ap.add_argument("--sign-camera", type=int, default=None, metavar="INDEX",
@@ -300,7 +321,8 @@ def main():
         recorder = SegmentRecorder()
         if a.auto_segment:
             from src.segmenter import ActivitySegmenter
-            segmenter = ActivitySegmenter()
+            segmenter = ActivitySegmenter(viewpoint=a.viewpoint,
+                                          rest_ratio=C.SEGMENT_REST_RATIO)
         cloud.start()
         cloud_status = "수어 입력 대기"
         if a.cloud_controls == "stdin":
@@ -426,6 +448,8 @@ def main():
                     if not gate.is_open():
                         cv2.putText(v, "MIC MUTED (TTS)", (16, 70),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+                    if recorder is not None:
+                        draw_segment_overlay(cv2, v, recorder, segmenter)
                     cv2.imshow("camera (debug)", v)
             except queue.Empty:
                 pass

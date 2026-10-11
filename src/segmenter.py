@@ -1,18 +1,34 @@
 """Rule-based automatic sentence segmentation for the cloud backend.
 
-A glasses camera often cuts off the shoulders, so only hands are used: a
-visible hand must keep moving to start a segment, which ends when the hands
-leave the view or stay still. Speeds are in palm lengths per second. Not
-learned; thresholds need checking on wearable recordings.
+A signing hand must keep moving to start a segment, which ends when the hands
+are gone or stay still. Speeds are in palm lengths per second.
+
+- glasses: shoulders are often cut off, so hands are used alone and "gone"
+  means out of view.
+- webcam: a frontal laptop camera sees the shoulders. Only hands above a rest
+  line (shoulder height + rest_ratio shoulder widths) count, so typing on the
+  keyboard is ignored and lowering the hands ends the sentence. Shoulder width
+  is a steadier scale than the palm, which foreshortens as it turns.
+  Frames without both shoulders fall back to the glasses rule.
+
+Not learned; thresholds need checking on recordings from the same camera.
 """
 import numpy as np
 from src.pose_sequence import MAX_SECONDS
 
+VIEWPOINTS = ("webcam", "glasses")
+PALM_PER_SHOULDER = 0.25  # wrist-to-middle-knuckle length / shoulder width, adults
+
 
 class ActivitySegmenter:
-    def __init__(self, *, start_speed=1.5, still_speed=0.4, start_hold=0.3, end_hold=0.8,
+    def __init__(self, *, viewpoint="webcam", rest_ratio=1.0, start_speed=1.5,
+                 still_speed=0.4, start_hold=0.3, end_hold=0.8,
                  still_hold=1.5, min_seconds=0.5, max_seconds=MAX_SECONDS - 1.0,
                  pending_timeout=1.0, smoothing=0.3):
+        if viewpoint not in VIEWPOINTS:
+            raise ValueError(f"viewpoint must be one of {VIEWPOINTS}")
+        self.viewpoint, self.rest_ratio = viewpoint, rest_ratio
+        self.rest_line = None  # Normalized image y of the rest line, for the preview.
         self.start_speed, self.still_speed = start_speed, still_speed
         self.start_hold, self.end_hold, self.still_hold = start_hold, end_hold, still_hold
         self.min_seconds, self.max_seconds = min_seconds, max_seconds
@@ -23,12 +39,19 @@ class ActivitySegmenter:
 
     def _motion(self, points, mask, t, image_size):
         p = np.asarray(points, np.float64).copy()
-        if image_size is not None:
-            p[:, 1] *= image_size[1] / image_size[0]
+        aspect = image_size[1] / image_size[0] if image_size is not None else 1.0
+        p[:, 1] *= aspect
         m = np.asarray(mask, bool)
         wrists = p[[0, 21]]
         palms = np.linalg.norm(p[[9, 30]] - wrists, axis=1)
         valid = m[[0, 21]] & m[[9, 30]] & (palms > 1e-6)
+        width = np.linalg.norm(p[43] - p[44])
+        self.rest_line = None
+        if self.viewpoint == "webcam" and m[43] and m[44] and width > 1e-6:
+            rest = (p[43, 1] + p[44, 1]) / 2 + self.rest_ratio * width
+            self.rest_line = rest / aspect
+            valid &= wrists[:, 1] < rest
+            palms = np.full(2, PALM_PER_SHOULDER * width)
         raw = 0.0
         if self.previous is not None:
             before, old_wrists, old_valid = self.previous
