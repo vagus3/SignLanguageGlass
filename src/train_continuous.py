@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from src.continuous_sign import (CtcRecognizer, collate, load_dataset,
                                   split_dataset, save_checkpoint, greedy_decode, edit_distance)
+from src.pose_sequence import FEATURE_SETS, VERSION_3D
 
 
 def fit(model, rows, labels, *, epochs=30, batch=8, seed=0, device="cpu"):
@@ -20,7 +21,7 @@ def fit(model, rows, labels, *, epochs=30, batch=8, seed=0, device="cpu"):
         order = rng.permutation(len(rows))
         for start in range(0, len(rows), batch):
             items = [rows[i] for i in order[start:start+batch]]
-            x, lengths, targets, target_lengths = collate(items, labels)
+            x, lengths, targets, target_lengths = collate(items, labels, model.feature_set)
             optimizer.zero_grad()
             output = model(x.to(device), lengths)
             loss = criterion(output, targets.to(device), lengths, target_lengths)
@@ -40,7 +41,7 @@ def evaluate(model, rows, labels, device="cpu"):
     errors, words, results = 0, 0, []
     with torch.inference_mode():
         for row in rows:
-            x, lengths, _, _ = collate([row], labels)
+            x, lengths, _, _ = collate([row], labels, model.feature_set)
             p = model(x.to(device), lengths)[:, 0].exp().cpu().numpy()
             prediction, score = greedy_decode(p, labels)
             errors += edit_distance(row["glosses"], prediction)
@@ -59,6 +60,8 @@ def main():
     p.add_argument("--batch", type=int, default=8)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    p.add_argument("--features", choices=sorted(FEATURE_SETS), default="2d",
+                   help="3d needs a pose3d-sequence-v2 manifest")
     args = p.parse_args()
     if args.epochs < 1 or args.batch < 1:
         p.error("epochs and batch must be positive")
@@ -66,6 +69,8 @@ def main():
     if out.exists():
         p.error("Output exists; choose a new directory")
     rows, skipped = load_dataset(args.manifest)
+    if args.features == "3d" and rows[0]["sequence"].version != VERSION_3D:
+        p.error("--features 3d needs world coordinates; prepare data with 3D keypoints")
     splits = split_dataset(rows, args.seed)
     if any(not r.get("continuous", False) for r in splits["train"]):
         p.error("Continuous training requires continuous=true annotations; isolated words are not sentences")
@@ -76,11 +81,12 @@ def main():
     if unknown:
         p.error(f"Held-out labels absent from training vocabulary: {sorted(unknown)}")
     torch.manual_seed(args.seed)
-    model = CtcRecognizer(len(labels))
+    model = CtcRecognizer(len(labels), feature_set=args.features)
     history = fit(model, splits["train"], labels, epochs=args.epochs,
                   batch=args.batch, seed=args.seed, device=args.device)
     validation = evaluate(model, splits["val"], labels, args.device)
-    report = {"validation": validation, "skipped": skipped, "history": history,
+    report = {"feature_set": args.features, "validation": validation, "skipped": skipped,
+              "history": history,
               "splits": {s: [r["id"] for r in clips] for s, clips in splits.items()},
               "auto_speech_enabled": False, "test_evaluated": False}
     out.mkdir(parents=True)

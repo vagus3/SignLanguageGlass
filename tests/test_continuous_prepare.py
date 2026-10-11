@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 import numpy as np
 from tools.prepare_continuous import prepare
-from src.pose_sequence import PoseSequence
+from src.pose_sequence import PoseSequence, VERSION_3D
 from src.continuous_sign import load_dataset
 
 with tempfile.TemporaryDirectory() as td:
@@ -41,6 +41,19 @@ with tempfile.TemporaryDirectory() as td:
         raise AssertionError("Existing output overwritten")
     except ValueError:
         pass
+    try:
+        prepare(annotation,root/"out3d",with_world=True)
+        raise AssertionError("2D-only keypoints became a 3D dataset")
+    except ValueError:
+        pass
+    for path in root.glob("input*/*_keypoints.json"):
+        person=json.loads(path.read_text())["people"]
+        person["hand_left_keypoints_3d"]=np.tile([.1,.2,2,1],(21,1)).ravel().tolist()
+        path.write_text(json.dumps({"people":person}))
+    report=prepare(annotation,root/"out3d",with_world=True)
+    assert report["version"]==VERSION_3D
+    rows,_=load_dataset(root/"out3d/manifest.json")
+    assert rows[0]["sequence"].world_mask[:,:21].all() and not rows[0]["sequence"].world_mask[:,21:].any()
     del source["image_size"]
     annotation.write_text(json.dumps(source))
     try:

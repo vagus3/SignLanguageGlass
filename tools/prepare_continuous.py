@@ -16,10 +16,11 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.features_v2 import person_from_frame
-from src.pose_sequence import PoseSequence, VERSION, JOINT_NAMES, from_openpose
+from src.pose_sequence import (PoseSequence, VERSION, VERSION_3D, JOINT_NAMES, from_openpose,
+                                world_from_openpose)
 
 
-def prepare(annotation_path, out):
+def prepare(annotation_path, out, with_world=False):
     annotation_path, out = Path(annotation_path), Path(out)
     source = json.loads(annotation_path.read_text(encoding="utf-8"))
     if out.exists():
@@ -49,7 +50,7 @@ def prepare(annotation_path, out):
             frames.sort()
             if len(frames) < 2:
                 raise ValueError(f"{identity}: fewer than two frames")
-            coordinates, masks = [], []
+            coordinates, masks, worlds, world_masks = [], [], [], []
             for number, p in frames:
                 person = person_from_frame(json.loads(p.read_text(encoding="utf-8")))
                 if person is None:
@@ -58,9 +59,18 @@ def prepare(annotation_path, out):
                                              input_is_mirrored=row.get("input_is_mirrored", False))
                 coordinates.append(points)
                 masks.append(mask)
+                if with_world:
+                    world, world_mask = world_from_openpose(
+                        person, input_is_mirrored=row.get("input_is_mirrored", False))
+                    worlds.append(world)
+                    world_masks.append(world_mask)
             positions = np.array([n for n, _ in frames])
             timestamps = (positions - positions[0]) / float(fps)
-            sequence = PoseSequence(timestamps, coordinates, masks, tuple(size)).validate()
+            if with_world and not np.any(world_masks):
+                raise ValueError(f"{identity}: no *_keypoints_3d values for --with-3d")
+            sequence = PoseSequence(timestamps, coordinates, masks, tuple(size),
+                                    world=worlds if with_world else None,
+                                    world_mask=world_masks if with_world else None).validate()
             filename = f"clip_{index:06d}.npz"
             sequence.save(stage / filename)
             for key in ("signer_id", "session_id", "group_id"):
@@ -74,7 +84,7 @@ def prepare(annotation_path, out):
                 missing.append({"id": identity, "reason": "ordered glosses unavailable"})
         if not rows:
             raise ValueError("No clips supplied")
-        report = {"version": VERSION, "joint_names": JOINT_NAMES, "clips": rows,
+        report = {"version": VERSION_3D if with_world else VERSION, "joint_names": JOINT_NAMES, "clips": rows,
                   "excluded_from_ctc": missing, "deployment_ready": False,
                   "limitations": ["2D viewpoint mismatch needs wearable evaluation",
                                   "Interlocutor face excluded; signer expression unavailable"]}
@@ -88,6 +98,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("annotations")
     parser.add_argument("--out", required=True)
+    parser.add_argument("--with-3d", action="store_true",
+                        help="also store *_keypoints_3d as pose3d-sequence-v2")
     args = parser.parse_args()
-    result = prepare(args.annotations, args.out)
+    result = prepare(args.annotations, args.out, args.with_3d)
     print(f"{len(result['clips'])} clips; {len(result['excluded_from_ctc'])} without glosses")

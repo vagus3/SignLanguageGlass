@@ -9,7 +9,8 @@ from pathlib import Path
 import time
 import uuid
 import config as C
-from src.pose_sequence import VERSION, JOINT_NAMES, from_mediapipe
+from src.pose_sequence import (VERSION, VERSION_3D, JOINT_NAMES, from_mediapipe,
+                               world_from_mediapipe)
 from src.cloud_sign import SegmentRecorder
 
 
@@ -21,15 +22,18 @@ def main():
     p.add_argument("--signer", default=C.SIGNER_ID)
     p.add_argument("--session", default=C.SESSION_ID)
     p.add_argument("--camera", type=int, default=C.CAM_INDEX)
+    p.add_argument("--with-3d", action="store_true",
+                   help="also record Holistic 3D points (pose3d-sequence-v2 dataset)")
     args = p.parse_args()
     if any(not v.strip() for v in (args.signer, args.session)):
         p.error("signer/session must not be empty")
     root = Path(args.out)
     root.mkdir(parents=True, exist_ok=True)
     manifest_path = root / "manifest.json"
+    version = VERSION_3D if args.with_3d else VERSION
     manifest = (json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists()
-                else {"version": VERSION, "joint_names": JOINT_NAMES, "clips": []})
-    if manifest["version"] != VERSION:
+                else {"version": version, "joint_names": JOINT_NAMES, "clips": []})
+    if manifest["version"] != version:
         p.error("Existing dataset uses a different pose contract")
     import cv2
     from src.camera import CameraReader
@@ -50,7 +54,8 @@ def main():
             h, w = frame.shape[:2]
             res = holistic.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             points, mask = from_mediapipe(res)
-            recorder.add(points, mask, captured, (w, h))
+            world = world_from_mediapipe(res, (w, h)) if args.with_3d else (None, None)
+            recorder.add(points, mask, captured, (w, h), *world)
             status = "REC" if recorder.active else ("CANCELLED: " + recorder.error
                                                       if recorder.error else "READY")
             cv2.putText(frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX,

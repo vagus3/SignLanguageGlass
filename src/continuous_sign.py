@@ -6,14 +6,17 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from src.pose_sequence import PoseSequence, VERSION, FEATURE_DIM, features
+from src.pose_sequence import PoseSequence, VERSION, VERSION_3D, VERSIONS, FEATURE_SETS
 
 
 class CtcRecognizer(nn.Module):
-    def __init__(self, classes, hidden=128):
+    def __init__(self, classes, hidden=128, feature_set="2d"):
         super().__init__()
-        self.encoder = nn.Sequential(nn.Linear(FEATURE_DIM, hidden), nn.LayerNorm(hidden),
-                                     nn.GELU())
+        if feature_set not in FEATURE_SETS:
+            raise ValueError(f"Unknown feature set: {feature_set}")
+        self.feature_set = feature_set
+        self.encoder = nn.Sequential(nn.Linear(FEATURE_SETS[feature_set][1], hidden),
+                                     nn.LayerNorm(hidden), nn.GELU())
         self.temporal = nn.LSTM(hidden, hidden, num_layers=2, bidirectional=True,
                                 dropout=0.1, batch_first=True)
         self.output = nn.Linear(hidden * 2, classes)
@@ -56,7 +59,7 @@ def load_dataset(manifest_path):
     """Only gloss-labelled clips train CTC; text-only rows are reported, not invented."""
     path = Path(manifest_path)
     manifest = json.loads(path.read_text(encoding="utf-8"))
-    if manifest.get("version") != VERSION:
+    if manifest.get("version") not in VERSIONS:
         raise ValueError("Dataset version mismatch")
     rows, skipped = [], []
     for row in manifest["clips"]:
@@ -71,6 +74,8 @@ def load_dataset(manifest_path):
             if not isinstance(row.get(key), str) or not row[key].strip():
                 raise ValueError(f"{row.get('id')}: missing {key}")
         sequence = PoseSequence.load(path.parent / row["file"])
+        if sequence.version != manifest["version"]:
+            raise ValueError(f"{row['id']}: clip version differs from manifest")
         minimum = len(glosses) + sum(a == b for a, b in zip(glosses, glosses[1:]))
         if len(sequence.timestamps) < minimum:
             raise ValueError(f"{row['id']}: too few frames for CTC target")
@@ -128,10 +133,11 @@ def split_dataset(rows, seed=0):
     return result
 
 
-def collate(rows, vocabulary):
-    arrays = [features(r["sequence"]) for r in rows]
+def collate(rows, vocabulary, feature_set="2d"):
+    extract, dim = FEATURE_SETS[feature_set]
+    arrays = [extract(r["sequence"]) for r in rows]
     lengths = torch.tensor([len(x) for x in arrays], dtype=torch.long)
-    x = torch.zeros(len(rows), int(lengths.max()), FEATURE_DIM)
+    x = torch.zeros(len(rows), int(lengths.max()), dim)
     ids = {label: i for i, label in enumerate(vocabulary)}
     targets, target_lengths = [], []
     for i, (row, array) in enumerate(zip(rows, arrays)):
@@ -149,7 +155,10 @@ def save_checkpoint(path, model, labels, *, calibration=None, metadata=None):
             digest.update(name.encode())
             digest.update(tensor.detach().cpu().contiguous().numpy().tobytes())
         metadata["model_id"] = digest.hexdigest()[:16]
-    torch.save({"version": VERSION, "feature_dim": FEATURE_DIM, "labels": labels,
+    feature_set = model.feature_set
+    torch.save({"version": VERSION_3D if feature_set == "3d" else VERSION,
+                "feature_set": feature_set, "feature_dim": FEATURE_SETS[feature_set][1],
+                "labels": labels,
                 "hidden": model.temporal.hidden_size, "state_dict": model.state_dict(),
                 "calibration": calibration, "metadata": metadata}, path)
 
@@ -158,12 +167,16 @@ class Recognizer:
     def __init__(self, path):
         # Only load trusted, locally trained checkpoints.
         data = torch.load(path, map_location="cpu", weights_only=True)
-        if data["version"] != VERSION or data["feature_dim"] != FEATURE_DIM:
+        # Checkpoints older than feature sets were always 2D.
+        self.feature_set = data.get("feature_set", "2d")
+        expected_version = VERSION_3D if self.feature_set == "3d" else VERSION
+        if (self.feature_set not in FEATURE_SETS or data["version"] != expected_version
+                or data["feature_dim"] != FEATURE_SETS[self.feature_set][1]):
             raise ValueError("Checkpoint pose contract mismatch")
         self.labels = data["labels"]
         if not self.labels or self.labels[0] != "<blank>" or len(set(self.labels)) != len(self.labels):
             raise ValueError("Invalid checkpoint vocabulary")
-        self.model = CtcRecognizer(len(self.labels), data["hidden"])
+        self.model = CtcRecognizer(len(self.labels), data["hidden"], self.feature_set)
         self.model.load_state_dict(data["state_dict"])
         self.model.eval()
         self.calibration = data.get("calibration") or {}
@@ -179,7 +192,7 @@ class Recognizer:
         sequence.validate()
         if not sequence.mask[:, :42].any():
             return [], 0.0
-        x = torch.from_numpy(features(sequence))[None]
+        x = torch.from_numpy(FEATURE_SETS[self.feature_set][0](sequence))[None]
         with torch.inference_mode():
             probability = self.model(x, torch.tensor([x.shape[1]]))[:, 0].exp().numpy()
         return greedy_decode(probability, self.labels)

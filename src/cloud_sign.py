@@ -32,7 +32,7 @@ class SegmentRecorder:
         with self.lock:
             self.active, self.frames, self.error = False, [], None
 
-    def add(self, points, mask, timestamp, image_size):
+    def add(self, points, mask, timestamp, image_size, world=None, world_mask=None):
         with self.lock:
             if not self.active:
                 return
@@ -40,10 +40,12 @@ class SegmentRecorder:
                 self.active, self.frames, self.error = False, [], "too_long"
                 return
             if self.frames and (timestamp <= self.frames[-1][0]
-                                or tuple(image_size) != self.frames[-1][3]):
+                                or tuple(image_size) != self.frames[-1][3]
+                                or (world is None) != (self.frames[-1][4] is None)):
                 self.active, self.frames, self.error = False, [], "camera_discontinuity"
                 return
-            self.frames.append((timestamp, points.copy(), mask.copy(), tuple(image_size)))
+            self.frames.append((timestamp, points.copy(), mask.copy(), tuple(image_size),
+                                None if world is None else (world.copy(), world_mask.copy())))
 
     def finish(self):
         with self.lock:
@@ -57,8 +59,11 @@ class SegmentRecorder:
             raise ValueError("too_short")
         timestamps = np.array([f[0] for f in frames])
         ended = time.time()
+        world = ((None, None) if frames[0][4] is None
+                 else ([f[4][0] for f in frames], [f[4][1] for f in frames]))
         return PoseSequence(timestamps - timestamps[0], [f[1] for f in frames],
-                            [f[2] for f in frames], frames[0][3]).validate(), ended
+                            [f[2] for f in frames], frames[0][3],
+                            world=world[0], world_mask=world[1]).validate(), ended
 
 
 class CloudClient:

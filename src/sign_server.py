@@ -23,6 +23,8 @@ import numpy as np
 from src.pose_sequence import PoseSequence, VERSION, MAX_FRAMES
 
 DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+# A full-length 3D segment serializes to about 5 MB of JSON.
+MAX_BODY_BYTES = 8 * 1024 * 1024
 
 
 class TranslationRequest(BaseModel):
@@ -34,15 +36,22 @@ class TranslationRequest(BaseModel):
     coordinates: list[list[list[float]]] = Field(min_length=2, max_length=MAX_FRAMES)
     mask: list[list[StrictBool]] = Field(min_length=2, max_length=MAX_FRAMES)
     image_size: tuple[StrictInt, StrictInt]
+    world: list[list[list[float]]] | None = Field(default=None, min_length=2,
+                                                  max_length=MAX_FRAMES)
+    world_mask: list[list[StrictBool]] | None = Field(default=None, min_length=2,
+                                                      max_length=MAX_FRAMES)
 
     @model_validator(mode="after")
     def validate_pose(self):
-        self.sequence()
+        sequence = self.sequence()
+        if sequence.version != self.version:
+            raise ValueError("version does not match the presence of world coordinates")
         return self
 
     def sequence(self):
         return PoseSequence(self.timestamps, self.coordinates, self.mask,
-                            self.image_size, self.version).validate()
+                            self.image_size, self.version, self.world,
+                            self.world_mask).validate()
 
 
 class VllmTranslator:
@@ -193,7 +202,7 @@ class TranslationService:
 
     def _translate(self, request, received_at=None):
         start = self.clock()
-        result = {"version": VERSION, "session_id": request.session_id,
+        result = {"version": request.version, "session_id": request.session_id,
                   "segment_id": request.segment_id, "status": "unavailable",
                   "glosses": [], "text": "", "auto_speech": False,
                   "mock": self.mock, "model_version": {
@@ -253,7 +262,7 @@ def create_app(service=None, token=None):
             chunks, total = [], 0
             async for chunk in request.stream():
                 total += len(chunk)
-                if total > 4 * 1024 * 1024:
+                if total > MAX_BODY_BYTES:
                     return JSONResponse({"detail": "Request too large"}, status_code=413)
                 chunks.append(chunk)
             request._body = b"".join(chunks)

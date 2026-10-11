@@ -44,7 +44,7 @@ def resolve_camera_plan(no_sign, fixed_caption, sign_camera=None, face_camera=No
 # ---------------------------------------------------------------- 비전 스레드
 class VisionThread(threading.Thread):
     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
-                 segment_recorder=None):
+                 segment_recorder=None, pose_3d=False):
         # daemon 을 클래스 속성으로 두면 Thread.daemon 프로퍼티를 가려서
         # 내부 _daemonic 플래그와 어긋납니다. 생성자로 넘겨야 안전합니다.
         super().__init__(name="vision", daemon=True)
@@ -52,6 +52,7 @@ class VisionThread(threading.Thread):
         self.enable_sign = enable_sign
         self.camera_index = camera_index
         self.segment_recorder = segment_recorder
+        self.pose_3d = pose_3d
         from src.latency import NullTracker
         self.stats = stats or NullTracker()
         # ★ 이름을 _stop 으로 두면 안 됩니다.
@@ -107,9 +108,10 @@ class VisionThread(threading.Thread):
 
             # Capture every processed frame before the lossy preview queue.
             if self.segment_recorder is not None:
-                from src.pose_sequence import from_mediapipe
+                from src.pose_sequence import from_mediapipe, world_from_mediapipe
                 points, mask = from_mediapipe(res)
-                self.segment_recorder.add(points, mask, t_cap, (w, h))
+                world = world_from_mediapipe(res, (w, h)) if self.pose_3d else (None, None)
+                self.segment_recorder.add(points, mask, t_cap, (w, h), *world)
 
             word, word_t = None, 0.0
             if predictor is not None:
@@ -242,6 +244,8 @@ def main():
                     help="기존 ONNX 단어 인식 또는 서버의 연속 수어 번역")
     ap.add_argument("--cloud-controls", choices=["keyboard", "stdin"], default="keyboard",
                     help="cloud: SPACE/c 또는 표준입력 start/stop/cancel로 문장 구간 지정")
+    ap.add_argument("--pose-3d", action="store_true",
+                    help="cloud: 3D 좌표도 전송 (서버가 --features 3d 체크포인트일 때)")
     ap.add_argument("--fixed-caption", action="store_true",
                     help="얼굴 추적 없이 HUD 하단 고정 자막 (카메라 불필요)")
     ap.add_argument("--sign-camera", type=int, default=None, metavar="INDEX",
@@ -305,7 +309,8 @@ def main():
         ap.error(str(e))
     vq = queue.Queue(maxsize=1) if need_vision else None
     vision = (VisionThread(vq, enable_sign=not a.no_sign and cloud is None, stats=stats,
-                           camera_index=sign_index, segment_recorder=recorder)
+                           camera_index=sign_index, segment_recorder=recorder,
+                           pose_3d=a.pose_3d)
               if need_vision else None)
     if vision:
         vision.start()

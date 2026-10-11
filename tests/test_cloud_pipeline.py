@@ -17,7 +17,7 @@ import urllib.error
 import numpy as np
 from src.pose_sequence import PoseSequence
 from src.sign_server import (create_app, TranslationService, MockRecognizer, MockTranslator,
-                             TranslationRequest, VllmTranslator)
+                             TranslationRequest, VllmTranslator, MAX_BODY_BYTES)
 from src.cloud_sign import CloudClient, CloudWorker, SegmentRecorder, validate_response
 
 s=PoseSequence([0,.1,.2],np.full((3,49,2),.4),np.ones((3,49),bool),(640,480))
@@ -44,7 +44,7 @@ changed={**payload,"coordinates":np.full((3,49,2),.5).tolist()}
 assert client.post("/v1/sign/translate",json=changed,headers=headers).status_code==409
 empty={**payload,"segment_id":"empty","mask":np.zeros((3,49),bool).tolist()}
 assert client.post("/v1/sign/translate",json=empty,headers=headers).json()["status"]=="no_sign"
-assert client.post("/v1/sign/translate",content=b" "* (4*1024*1024+1),headers=headers).status_code==413
+assert client.post("/v1/sign/translate",content=b" "*(MAX_BODY_BYTES+1),headers=headers).status_code==413
 
 count=[0]
 def retry_then_success(request,timeout):

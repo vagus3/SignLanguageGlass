@@ -102,6 +102,29 @@ python -m src.collect_continuous --signer person01 --session day01 --glosses
 SPACE로 녹화하고, 미사용 촬영자·날짜·배경·조명을 나누어 데이터를 준비합니다.
 안경 시점의 표정 미관측·가림·AI Hub와 실시간 좌표 추정 차이는 별도 평가해야 합니다.
 
+### 3D 방향·깊이 분기 (pose3d-sequence-v2)
+
+2D 규격에 3D world 좌표(49점, x 오른쪽·y 아래·z 카메라에서 멀어지는 방향)를
+더한 선택형 규격입니다. 2D 특징 331차원 뒤에 손별 손바닥 법선, 손가락 방향,
+어깨 중심 기준 손목 위치·속도(어깨폭 정규화), 유효 플래그 28차원을 붙입니다.
+방향은 손 관절끼리만, 위치·깊이는 몸 관절끼리만 계산하므로 손과 몸의 3D 원점이
+달라도 됩니다.
+
+~~~bash
+python tools/prepare_continuous.py annotations.json --out data/processed/continuous3d --with-3d
+python -m src.train_continuous data/processed/continuous3d/manifest.json \
+  --out models/continuous3d --features 3d
+python -m src.collect_continuous --with-3d --signer person01 --session day01 --glosses NAME WHAT
+python main.py --sign-backend cloud --pose-3d   # 서버가 3D 체크포인트일 때
+~~~
+
+- AI Hub는 `*_keypoints_3d`(카메라 기준 미터)를 사용합니다. 3D 값이 없는 클립은 거부합니다.
+- 실시간 MediaPipe Holistic은 손 3D가 영상 기준 근사값(z는 대략 x 축척)이고
+  몸은 `pose_world_landmarks`(엉덩이 원점)입니다. 손바닥 방향은 근사값이므로
+  AI Hub 학습 모델을 착용 데이터로 검증하기 전에는 성능 향상을 가정하지 않습니다.
+- 3D 데이터셋으로 `--features 2d` 모델도 학습할 수 있어 같은 데이터로 비교할 수 있습니다.
+  3D 체크포인트는 2D 요청을 거부합니다.
+
 ## 3. 실제 vLLM과 서버
 
 GPU Linux 환경에 별도 가상환경을 만들고 설치합니다. vLLM을 장치 또는 CTC의
