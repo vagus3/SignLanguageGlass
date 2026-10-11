@@ -50,6 +50,13 @@ ORDER = ["capture", "holistic", "feature", "infer", "sign_total",
          "recognition", "phrase_latch", "tts_start", "end_to_end"]
 
 LABEL = {
+    "cloud_roundtrip": "클라우드 요청 왕복",
+    "cloud_response": "수어 종료->번역 수신",
+    "pose_pack": "좌표 구간 패킹",
+    "cloud_server_queue_wait": "서버 큐 대기",
+    "cloud_server_recognize": "서버 CTC 인식",
+    "cloud_server_language": "서버 언어 모델 생성",
+    "cloud_server_server_total": "서버 전체",
     "capture":      "카메라 read()",
     "holistic":     "MediaPipe Holistic",
     "feature":      "특징 추출(246차원)",

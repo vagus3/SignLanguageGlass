@@ -43,13 +43,15 @@ def resolve_camera_plan(no_sign, fixed_caption, sign_camera=None, face_camera=No
 
 # ---------------------------------------------------------------- 비전 스레드
 class VisionThread(threading.Thread):
-    def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None):
+    def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
+                 segment_recorder=None):
         # daemon 을 클래스 속성으로 두면 Thread.daemon 프로퍼티를 가려서
         # 내부 _daemonic 플래그와 어긋납니다. 생성자로 넘겨야 안전합니다.
         super().__init__(name="vision", daemon=True)
         self.out = out_q
         self.enable_sign = enable_sign
         self.camera_index = camera_index
+        self.segment_recorder = segment_recorder
         from src.latency import NullTracker
         self.stats = stats or NullTracker()
         # ★ 이름을 _stop 으로 두면 안 됩니다.
@@ -102,6 +104,12 @@ class VisionThread(threading.Thread):
             t_hol = time.time()
             st.add("holistic", (t_hol - t_cap) * 1000)
             self.ms_vision = (t_hol - t0) * 1000
+
+            # Capture every processed frame before the lossy preview queue.
+            if self.segment_recorder is not None:
+                from src.pose_sequence import from_mediapipe
+                points, mask = from_mediapipe(res)
+                self.segment_recorder.add(points, mask, t_cap, (w, h))
 
             word, word_t = None, 0.0
             if predictor is not None:
@@ -230,6 +238,10 @@ def main():
     ap.add_argument("--no-stt", action="store_true")
     ap.add_argument("--no-sign", action="store_true")
     ap.add_argument("--no-tts", action="store_true")
+    ap.add_argument("--sign-backend", choices=["local", "cloud"], default="local",
+                    help="기존 ONNX 단어 인식 또는 서버의 연속 수어 번역")
+    ap.add_argument("--cloud-controls", choices=["keyboard", "stdin"], default="keyboard",
+                    help="cloud: SPACE/c 또는 표준입력 start/stop/cancel로 문장 구간 지정")
     ap.add_argument("--fixed-caption", action="store_true",
                     help="얼굴 추적 없이 HUD 하단 고정 자막 (카메라 불필요)")
     ap.add_argument("--sign-camera", type=int, default=None, metavar="INDEX",
@@ -246,6 +258,8 @@ def main():
                     help="지연을 구간별로 측정해 종료 시 p50/p95 를 출력합니다. "
                          "경로를 주면 원본 표본을 CSV 로도 저장합니다.")
     a = ap.parse_args()
+    if a.sign_backend == "cloud" and not a.no_sign and a.cloud_controls == "keyboard":
+        a.debug = True  # SPACE needs a visible OpenCV event window.
 
     import cv2
     from src.hud import HudRenderer, load_calib
@@ -262,6 +276,27 @@ def main():
     # 유선 이어폰으로 들을 때는 --no-gate 로 꺼도 됩니다.
     gate = NullGate() if a.no_gate else AudioGate(C.AUDIO_GATE_TAIL_SEC)
 
+    cloud = recorder = None
+    commands = queue.Queue()
+    cloud_status = ""
+    if a.sign_backend == "cloud" and not a.no_sign:
+        from src.cloud_sign import CloudWorker, SegmentRecorder
+        try:
+            cloud = CloudWorker(stats=stats)
+        except ValueError as e:
+            ap.error(str(e))
+        recorder = SegmentRecorder()
+        cloud.start()
+        cloud_status = "수어 입력 대기"
+        if a.cloud_controls == "stdin":
+            def read_commands():
+                for line in sys.stdin:
+                    commands.put(line.strip().lower())
+            threading.Thread(target=read_commands, daemon=True, name="cloud-controls").start()
+            print("[cloud] start / stop / cancel / quit 입력")
+        else:
+            print("[cloud] SPACE=문장 시작/종료, c=취소. 자동 발화는 서버 검증 후 활성화됩니다.")
+
     # 수어도 얼굴 앵커도 사용하지 않는 안정형 Phase 2는 카메라가 필요 없습니다.
     try:
         need_vision, separate_face, sign_index = resolve_camera_plan(
@@ -269,8 +304,8 @@ def main():
     except ValueError as e:
         ap.error(str(e))
     vq = queue.Queue(maxsize=1) if need_vision else None
-    vision = (VisionThread(vq, enable_sign=not a.no_sign, stats=stats,
-                           camera_index=sign_index)
+    vision = (VisionThread(vq, enable_sign=not a.no_sign and cloud is None, stats=stats,
+                           camera_index=sign_index, segment_recorder=recorder)
               if need_vision else None)
     if vision:
         vision.start()
@@ -307,6 +342,32 @@ def main():
                       or getattr(display, "has_window", False))
 
     print("실행 중. " + ("q 로 종료." if has_window else "Ctrl+C 로 종료."))
+
+    def handle_cloud_command(command):
+        nonlocal cloud_status
+        if cloud is None:
+            return
+        if command == "cancel":
+            recorder.cancel()
+            cloud.cancel()
+            cloud_status = "수어 입력 취소"
+        elif command == "start":
+            if cloud.busy:
+                cloud_status = "처리 중입니다"
+            elif not recorder.active:
+                recorder.start()
+                cloud_status = "수어 녹화 중"
+        elif command == "stop":
+            if not recorder.active:
+                return
+            try:
+                sequence, origin_t = recorder.finish()
+                if cloud.submit(sequence, origin_t):
+                    cloud_status = "수어 번역 중"
+            except ValueError as e:
+                cloud_status = "수어를 다시 입력하세요"
+                print("[cloud] 구간 취소:", e)
+
     try:
         while True:
             # ---- 비전 ----
@@ -372,6 +433,34 @@ def main():
                 speak(pend, tts, stats, pending_word_t)
                 pending_word_t = 0.0
 
+            if cloud is not None:
+                while not commands.empty():
+                    command = commands.get_nowait()
+                    if command == "quit":
+                        raise KeyboardInterrupt
+                    handle_cloud_command(command)
+                if recorder.error:
+                    cloud_status = "입력 취소: 다시 녹화하세요"
+                item = cloud.poll()
+                if item:
+                    result, origin_t = item
+                    cloud_status = {
+                        "no_sign": "수어가 감지되지 않았습니다",
+                        "uncertain": "수어를 다시 입력하세요",
+                        "unavailable": "번역 서버 연결을 확인하세요",
+                        "expired": "번역 요청이 취소 또는 만료됐습니다",
+                    }.get(result["status"], "")
+                    if result["status"] == "ok":
+                        text = result["text"]
+                        cloud_status = text
+                        print("[cloud 번역]", text)
+                        stats.since("cloud_response", origin_t)
+                        if result.get("auto_speech") and not result.get("mock"):
+                            if tts:
+                                tts.say(text, origin_t=origin_t)
+                        else:
+                            print("[cloud] 미검증/모의 결과: 텍스트만 표시합니다.")
+
             # ---- STT ----
             if sq is not None:
                 while not sq.empty():
@@ -388,7 +477,7 @@ def main():
             if caption and time.time() - cap_t > C.HUD_HOLD_SEC:
                 caption, is_partial = "", False
             with stats.span("render"):
-                img = hud.render(caption,
+                img = hud.render(caption or cloud_status,
                                  face_xy=None if a.fixed_caption else last_face,
                                  cam_size=last_size, partial=is_partial)
             with stats.span("display"):
@@ -398,13 +487,24 @@ def main():
             # 태웁니다(--display null 이고 --debug 도 아닐 때). 그땐 sleep 으로
             # 양보하고 Ctrl+C 로 종료하게 둡니다.
             if has_window:
-                if (cv2.waitKey(1) & 0xFF) == ord("q"):
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
                     break
+                if cloud is not None and a.cloud_controls == "keyboard":
+                    if key == ord(" "):
+                        handle_cloud_command("stop" if recorder.active else "start")
+                    elif key == ord("c"):
+                        handle_cloud_command("cancel")
             else:
                 time.sleep(0.01)
     except KeyboardInterrupt:
         pass
     finally:
+        if recorder is not None:
+            recorder.cancel()
+        if cloud is not None:
+            cloud.stop()
+            cloud.join(timeout=2.0)
         # 비전 스레드는 카메라와 Holistic 을 들고 있습니다. 기다리지 않고
         # 프로세스를 내리면 카메라 장치가 열린 채로 남아, 다음 실행에서
         # "카메라를 열 수 없습니다" 가 뜹니다(macOS 에서 특히 잘 납니다).

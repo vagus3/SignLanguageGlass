@@ -1,0 +1,6 @@
+# API/CTC environment; does not install camera or vLLM packages.
+numpy==1.26.4
+torch==2.4.1
+fastapi==0.115.0
+uvicorn==0.30.6
+httpx==0.27.2

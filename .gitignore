@@ -9,6 +9,9 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.env
+.env.*
+!.env.example
 
 # ---- 용량이 크거나 기계가 만드는 산출물 ----
 # 데이터·모델은 저장소가 아니라 각자 PC 에 둡니다.
