@@ -270,4 +270,31 @@ def features_3d(sequence):
     return np.concatenate([features(sequence), world_features(sequence)], axis=1)
 
 
-FEATURE_SETS = {"2d": (features, FEATURE_DIM), "3d": (features_3d, FEATURE_DIM_3D)}
+# Column groups of features_3d, so experiments can remove one cue at a time.
+FEATURE_BLOCKS = {"hand_shape": np.r_[0:84], "position": np.r_[84:182],
+                  "mask": np.r_[182:231], "velocity": np.r_[231:329], "timing": np.r_[329:331]}
+WORLD_BLOCKS = {"palm_orientation": [0, 1, 2, 3, 4, 5, 12], "wrist_3d": [6, 7, 8, 9, 10, 11, 13]}
+for _name, _columns in WORLD_BLOCKS.items():
+    FEATURE_BLOCKS[_name] = np.array([FEATURE_DIM + 14 * hand + c
+                                      for hand in (0, 1) for c in _columns])
+_2D = ["hand_shape", "position", "mask", "velocity", "timing"]
+FEATURE_PRESETS = {
+    "2d": _2D, "3d": _2D + list(WORLD_BLOCKS),
+    "2d_no_hand_shape": [b for b in _2D if b != "hand_shape"],
+    "2d_no_position": [b for b in _2D if b != "position"],
+    "2d_no_velocity": [b for b in _2D if b != "velocity"],
+    "3d_orientation": _2D + ["palm_orientation"], "3d_wrist": _2D + ["wrist_3d"],
+}
+
+
+def needs_world(feature_set):
+    return any(block in WORLD_BLOCKS for block in FEATURE_PRESETS[feature_set])
+
+
+def _selector(blocks):
+    columns = np.sort(np.concatenate([FEATURE_BLOCKS[b] for b in blocks]))
+    extract = features_3d if any(b in WORLD_BLOCKS for b in blocks) else features
+    return (lambda sequence: extract(sequence)[:, columns]), len(columns)
+
+
+FEATURE_SETS = {name: _selector(blocks) for name, blocks in FEATURE_PRESETS.items()}

@@ -6,7 +6,8 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from src.pose_sequence import PoseSequence, VERSION, VERSION_3D, VERSIONS, FEATURE_SETS
+from src.pose_sequence import (PoseSequence, VERSION, VERSION_3D, VERSIONS, FEATURE_SETS,
+                                needs_world)
 
 
 class CtcRecognizer(nn.Module):
@@ -156,7 +157,7 @@ def save_checkpoint(path, model, labels, *, calibration=None, metadata=None):
             digest.update(tensor.detach().cpu().contiguous().numpy().tobytes())
         metadata["model_id"] = digest.hexdigest()[:16]
     feature_set = model.feature_set
-    torch.save({"version": VERSION_3D if feature_set == "3d" else VERSION,
+    torch.save({"version": VERSION_3D if needs_world(feature_set) else VERSION,
                 "feature_set": feature_set, "feature_dim": FEATURE_SETS[feature_set][1],
                 "labels": labels,
                 "hidden": model.temporal.hidden_size, "state_dict": model.state_dict(),
@@ -169,8 +170,10 @@ class Recognizer:
         data = torch.load(path, map_location="cpu", weights_only=True)
         # Checkpoints older than feature sets were always 2D.
         self.feature_set = data.get("feature_set", "2d")
-        expected_version = VERSION_3D if self.feature_set == "3d" else VERSION
-        if (self.feature_set not in FEATURE_SETS or data["version"] != expected_version
+        if self.feature_set not in FEATURE_SETS:
+            raise ValueError("Checkpoint pose contract mismatch")
+        expected_version = VERSION_3D if needs_world(self.feature_set) else VERSION
+        if (data["version"] != expected_version
                 or data["feature_dim"] != FEATURE_SETS[self.feature_set][1]):
             raise ValueError("Checkpoint pose contract mismatch")
         self.labels = data["labels"]

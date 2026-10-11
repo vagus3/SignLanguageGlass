@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from src.continuous_sign import (CtcRecognizer, collate, load_dataset,
                                   split_dataset, save_checkpoint, greedy_decode, edit_distance)
-from src.pose_sequence import FEATURE_SETS, VERSION_3D
+from src.pose_sequence import FEATURE_SETS, VERSION_3D, needs_world
 
 
 def fit(model, rows, labels, *, epochs=30, batch=8, seed=0, device="cpu"):
@@ -52,6 +52,47 @@ def evaluate(model, rows, labels, device="cpu"):
             "reference_words": words, "clips": results}
 
 
+def prepare_training(manifest, seed=0, feature_sets=("2d",)):
+    """Rows, splits and vocabulary shared by every configuration trained on a manifest."""
+    rows, skipped = load_dataset(manifest)
+    for name in feature_sets:
+        if needs_world(name) and rows[0]["sequence"].version != VERSION_3D:
+            raise ValueError(f"--features {name} needs world coordinates; "
+                             "prepare data with 3D keypoints")
+    splits = split_dataset(rows, seed)
+    if any(not r.get("continuous", False) for r in splits["train"]):
+        raise ValueError("Continuous training requires continuous=true annotations; "
+                         "isolated words are not sentences")
+    labels = ["<blank>"] + sorted({g for r in splits["train"] for g in r["glosses"]})
+    if len(labels) < 2:
+        raise ValueError("Training vocabulary is empty")
+    unknown = {g for s in ("val", "test") for r in splits[s] for g in r["glosses"]} - set(labels)
+    if unknown:
+        raise ValueError(f"Held-out labels absent from training vocabulary: {sorted(unknown)}")
+    return skipped, splits, labels
+
+
+def train_one(splits, labels, feature_set, out, *, epochs=30, batch=8, seed=0, device="cpu",
+              skipped=()):
+    torch.manual_seed(seed)
+    model = CtcRecognizer(len(labels), feature_set=feature_set)
+    history = fit(model, splits["train"], labels, epochs=epochs,
+                  batch=batch, seed=seed, device=device)
+    validation = evaluate(model, splits["val"], labels, device)
+    report = {"feature_set": feature_set, "validation": validation, "skipped": list(skipped),
+              "history": history,
+              "splits": {s: [r["id"] for r in clips] for s, clips in splits.items()},
+              "auto_speech_enabled": False, "test_evaluated": False}
+    out = Path(out)
+    out.mkdir(parents=True)
+    save_checkpoint(out / "ctc.pt", model.cpu(), labels,
+                    metadata={"splits": report["splits"], "split_seed": seed,
+                              "continuous": True})
+    (out / "training.json").write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                                      encoding="utf-8")
+    return report
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("manifest")
@@ -61,40 +102,19 @@ def main():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     p.add_argument("--features", choices=sorted(FEATURE_SETS), default="2d",
-                   help="3d needs a pose3d-sequence-v2 manifest")
+                   help="3d* needs a pose3d-sequence-v2 manifest")
     args = p.parse_args()
     if args.epochs < 1 or args.batch < 1:
         p.error("epochs and batch must be positive")
     out = Path(args.out)
     if out.exists():
         p.error("Output exists; choose a new directory")
-    rows, skipped = load_dataset(args.manifest)
-    if args.features == "3d" and rows[0]["sequence"].version != VERSION_3D:
-        p.error("--features 3d needs world coordinates; prepare data with 3D keypoints")
-    splits = split_dataset(rows, args.seed)
-    if any(not r.get("continuous", False) for r in splits["train"]):
-        p.error("Continuous training requires continuous=true annotations; isolated words are not sentences")
-    labels = ["<blank>"] + sorted({g for r in splits["train"] for g in r["glosses"]})
-    if len(labels) < 2:
-        p.error("Training vocabulary is empty")
-    unknown = {g for s in ("val", "test") for r in splits[s] for g in r["glosses"]} - set(labels)
-    if unknown:
-        p.error(f"Held-out labels absent from training vocabulary: {sorted(unknown)}")
-    torch.manual_seed(args.seed)
-    model = CtcRecognizer(len(labels), feature_set=args.features)
-    history = fit(model, splits["train"], labels, epochs=args.epochs,
-                  batch=args.batch, seed=args.seed, device=args.device)
-    validation = evaluate(model, splits["val"], labels, args.device)
-    report = {"feature_set": args.features, "validation": validation, "skipped": skipped,
-              "history": history,
-              "splits": {s: [r["id"] for r in clips] for s, clips in splits.items()},
-              "auto_speech_enabled": False, "test_evaluated": False}
-    out.mkdir(parents=True)
-    save_checkpoint(out / "ctc.pt", model.cpu(), labels,
-                    metadata={"splits": report["splits"], "split_seed": args.seed,
-                              "continuous": True})
-    (out / "training.json").write_text(json.dumps(report, ensure_ascii=False, indent=2),
-                                      encoding="utf-8")
+    try:
+        skipped, splits, labels = prepare_training(args.manifest, args.seed, [args.features])
+    except ValueError as error:
+        p.error(str(error))
+    train_one(splits, labels, args.features, out, epochs=args.epochs, batch=args.batch,
+              seed=args.seed, device=args.device, skipped=skipped)
     print(f"Saved {out}/ctc.pt; automatic speech remains disabled until calibration")
 
 

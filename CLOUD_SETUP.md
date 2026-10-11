@@ -125,6 +125,23 @@ python main.py --sign-backend cloud --pose-3d   # 서버가 3D 체크포인트�
 - 3D 데이터셋으로 `--features 2d` 모델도 학습할 수 있어 같은 데이터로 비교할 수 있습니다.
   3D 체크포인트는 2D 요청을 거부합니다.
 
+### 특징 구성 비교 실험
+
+특징을 블록(hand_shape, position, mask, velocity, timing, palm_orientation, wrist_3d)으로
+나누고, 블록 조합에 이름을 붙인 구성을 `--features`로 고릅니다:
+`2d`, `3d`, `2d_no_hand_shape`, `2d_no_position`, `2d_no_velocity`, `3d_orientation`, `3d_wrist`.
+
+~~~bash
+python tools/compare_features.py data/processed/continuous3d/manifest.json \
+  --out reports/features-seed0 --features 2d 2d_no_velocity 3d_orientation 3d --seed 0
+~~~
+
+모든 구성은 같은 클립·분할·어휘·seed·학습 설정을 사용합니다. 결과는
+`comparison.json`/`comparison.md`(validation WER, 출력률, 일상 동작 오출력)와 구성별
+`<구성>/ctc.pt`입니다. test는 평가하지 않습니다. validation으로 구성을 고른 뒤
+`evaluate_continuous.py`로 test를 한 번만 평가합니다. 데이터가 적으면 seed를 바꿔
+반복하고, 차이가 일관된 경우에만 결론을 냅니다.
+
 ## 3. 실제 vLLM과 서버
 
 GPU Linux 환경에 별도 가상환경을 만들고 설치합니다. vLLM을 장치 또는 CTC의
