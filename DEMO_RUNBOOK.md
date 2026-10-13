@@ -89,7 +89,7 @@
 
 - 장치 본체, 예비 USB 카메라, OLED/브리지 MCU, 데이터 케이블 2개, 보조배터리/충전기
 - 동일 환경이 설치된 예비 노트북 또는 복구 가능한 가상환경/의존성 파일
-- `models/sign_lstm.onnx`, `labels.json`, `sign_lstm_preproc.json`, `vosk-ko`, TTS 캐시, 폰트 백업
+- `models/sign_lstm.onnx`, `labels.json`, `sign_lstm_preproc.json`, `sherpa-ko-174m-chunk32`·`vosk-ko` STT 모델, TTS 캐시, 폰트 백업
 - 무편집 폴백 영상과 `reports/` 평가 결과를 로컬에 저장; 행사장 인터넷에 의존하지 않음
 
 ## 금지 사항

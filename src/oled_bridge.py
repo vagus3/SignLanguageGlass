@@ -51,15 +51,24 @@ class PreviewDisplay:
     """실물 OLED 없이 레이아웃·가독성·좌표 매핑을 전부 검증할 수 있습니다."""
 
     has_window = True
+    dual = True     # 노트북에서는 내 결과와 상대의 말을 두 영역으로 함께 보여줍니다
 
     def __init__(self, scale=6):
         self.scale = scale
+        self._last = None
 
     def show(self, img):
         import cv2
         import numpy as np
+        # 대부분의 프레임은 직전과 같은 화면입니다. 창은 마지막 그림을 유지하므로
+        # 확대·imshow 를 건너뜁니다. 키 입력은 메인 루프의 waitKey 가 계속 받습니다.
+        frame = (img.size, img.tobytes())
+        if frame == self._last:
+            return
+        self._last = frame
         arr = np.array(img, dtype=np.uint8) * 255
-        big = cv2.resize(arr, (C.OLED_W * self.scale, C.OLED_H * self.scale),
+        h, w = arr.shape[:2]
+        big = cv2.resize(arr, (w * self.scale, h * self.scale),
                          interpolation=cv2.INTER_NEAREST)
         cv2.imshow("HUD (OLED simulation)", big)
 

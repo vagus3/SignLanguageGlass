@@ -1,7 +1,11 @@
 #!/usr/bin/env python
-"""Held-out CTC evaluation, optional vLLM comparison and validation-only calibration."""
+"""Held-out CTC evaluation, optional sentence composition and validation-only calibration.
+
+--compare-llm runs the same composition as the server (reviewed sentence, language
+model, fallback), so llm_text is what the server would speak; fallback previews
+are recorded but never count as spoken output.
+"""
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import sys
@@ -11,10 +15,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.continuous_sign import (Recognizer, load_dataset, split_dataset,
                                  save_checkpoint, edit_distance)
-
-
-def mapping_hash(mapping):
-    return hashlib.sha256(json.dumps(mapping, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+from src.translation import Glossary, compose, mapping_hash  # noqa: F401  (mapping_hash: API)
 
 
 def negative_duration(rows):
@@ -37,13 +38,46 @@ def negative_duration(rows):
     return total
 
 
+def review_verdict(clip, review):
+    """True/False when a person judged exactly what this clip would speak, else None.
+
+    Two forms of review count (tools/review_sentences.py writes the second):
+    - clips: a reviewer watched this clip and judged its prediction and text.
+      That verdict wins, including a rejection.
+    - sequences: a reviewer judged "these glosses -> this sentence". A rejection
+      always counts. An approval says nothing about whether the signer meant those
+      glosses, so it only counts when the prediction equals the reference glosses.
+    Either way the reviewed text must be the text the system actually produced.
+    """
+    text = clip.get("llm_text")
+    if not text or not review.get("reviewer"):
+        return None
+    entry = review.get("clips", {}).get(clip["id"])
+    if entry is not None:
+        if (entry.get("prediction") != clip["prediction"] or entry.get("text") != text
+                or type(entry.get("meaning_preserved")) is not bool):
+            return None
+        return entry["meaning_preserved"]
+    verdicts = [s["meaning_preserved"] for s in review.get("sequences", [])
+                if s.get("glosses") == clip["prediction"] and s.get("text") == text
+                and type(s.get("meaning_preserved")) is bool]
+    if not verdicts:
+        return None
+    if not all(verdicts):
+        return False
+    return True if clip["prediction"] == clip["reference"] else None
+
+
+def review_accepts(clip, review):
+    return review_verdict(clip, review) is True
+
+
 def choose_threshold(results, duration, review):
     """Maximize positive output coverage subject to <=2 false outputs per 600 seconds."""
     positives = [r for r in results if r["reference"]]
     negatives = [r for r in results if r.get("negative") and not r["reference"]]
     if duration < 600 or not positives or not review.get("reviewer"):
         return {"enabled": False, "reason": "Need >=600s negatives, positive clips and semantic review"}
-    reviewed = review.get("clips", {})
     candidates = sorted({r["score"] for r in results if r["prediction"]} | {0.0, 1.000001})
     choices = []
     for threshold in candidates:
@@ -52,10 +86,7 @@ def choose_threshold(results, duration, review):
         if false * 600 / duration > 2:
             continue
         # The review must assess actual LLM output from these predictions, not references alone.
-        if any(reviewed.get(r["id"], {}).get("meaning_preserved") is not True
-               or reviewed[r["id"]].get("prediction") != r["prediction"]
-               or reviewed[r["id"]].get("text") != r.get("llm_text")
-               or not r.get("llm_text") for r in accepted):
+        if not all(review_accepts(r, review) for r in accepted):
             continue
         if accepted:
             choices.append((len(accepted), -threshold, threshold, false))
@@ -87,6 +118,8 @@ def rules_text(glosses, mapping):
 
 
 def run_evaluation(recognizer, rows, mapping=None, translator=None):
+    """mapping: a Glossary or a plain {gloss: meaning} dict."""
+    glossary = Glossary.from_mapping(mapping) if mapping else None
     results, errors, count = [], 0, 0
     for row in rows:
         prediction, score = recognizer.predict(row["sequence"])
@@ -96,13 +129,18 @@ def run_evaluation(recognizer, rows, mapping=None, translator=None):
         entry = {"id": row["id"], "reference": reference, "prediction": prediction,
                  "score": score, "negative": row.get("negative", False),
                  "reference_text": row.get("text", ""), "llm_text": None}
-        if prediction and mapping and all(g in mapping for g in prediction):
-            entry["rule_text"] = rules_text(prediction, mapping)
+        if prediction and glossary and not glossary.unknown(prediction):
+            entry["rule_text"] = rules_text(prediction, glossary.meanings)
             if translator:
-                try:
-                    entry["llm_text"] = translator.translate(prediction, mapping)
-                except Exception:
-                    entry["llm_error"] = "unavailable_or_invalid"
+                composition = compose(prediction, glossary, translator)
+                entry["composition"] = {"status": composition.status,
+                                        "source": composition.source,
+                                        "issues": list(composition.issues)}
+                if composition.status == "ok":
+                    entry["llm_text"] = composition.text
+                else:
+                    entry["llm_error"] = "fallback_preview_not_spoken"
+                    entry["fallback_text"] = composition.text
         results.append(entry)
     return {"wer": errors / count if count else None, "reference_words": count,
             "errors": errors, "clips": results, "semantic_accuracy": "requires human review"}
@@ -122,12 +160,10 @@ def summarize(report, rows, calibration, review=None):
     reviewed, meaning_errors = 0, 0
     review = review or {}
     for result in emitted:
-        verdict = review.get("clips", {}).get(result["id"], {})
-        if (review.get("reviewer") and verdict.get("prediction") == result["prediction"]
-                and verdict.get("text") == result.get("llm_text")
-                and result.get("llm_text") and type(verdict.get("meaning_preserved")) is bool):
+        verdict = review_verdict(result, review)
+        if verdict is not None:
             reviewed += 1
-            meaning_errors += not verdict["meaning_preserved"]
+            meaning_errors += not verdict
     return {"recognition_coverage": len(emitted) / len(positives) if positives else None,
             "recognition_abstention_rate": 1-len(emitted)/len(positives) if positives else None,
             "threshold": calibration.get("threshold"),
@@ -145,10 +181,12 @@ def main():
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--split", choices=["val", "test"], default="test")
-    p.add_argument("--mapping")
+    p.add_argument("--mapping", help="glossary.json (meanings, kinds, reviewed sentences) or mapping.json")
     p.add_argument("--compare-llm", action="store_true")
     p.add_argument("--calibrate-out")
-    p.add_argument("--semantic-review", help="reviewer and clips keyed by ID with prediction/text/meaning_preserved")
+    p.add_argument("--semantic-review", help="review.json: reviewer, clips keyed by ID with "
+                   "prediction/text/meaning_preserved and/or gloss-level sequences "
+                   "(tools/review_sentences.py import)")
     args = p.parse_args()
     if args.calibrate_out and (args.split != "val" or not args.semantic_review
                               or not args.compare_llm or not args.mapping):
@@ -164,12 +202,15 @@ def main():
     actual = {s: [r["id"] for r in clips] for s, clips in splits.items()}
     if expected != actual:
         p.error("Dataset/splits differ from training checkpoint")
-    mapping = json.loads(Path(args.mapping).read_text(encoding="utf-8")) if args.mapping else None
+    try:
+        mapping = Glossary.load(args.mapping) if args.mapping else None
+    except ValueError as error:
+        p.error(str(error))
     translator = None
     if args.compare_llm:
         if not mapping:
             p.error("--mapping required for language comparison")
-        from src.sign_server import VllmTranslator
+        from src.translation import VllmTranslator
         translator = VllmTranslator()
     report = run_evaluation(recognizer, splits[args.split], mapping, translator)
     report.update(split=args.split, skipped=skipped, mock=False)
@@ -179,7 +220,8 @@ def main():
     if args.calibrate_out:
         duration = negative_duration(splits["val"])
         calibration = choose_threshold(report["clips"], duration, review)
-        calibration.update(mapping_hash=mapping_hash(mapping), language_model=translator.model)
+        # Same hash the server compares: meanings, kinds and reviewed sentences.
+        calibration.update(mapping_hash=mapping.policy_hash(), language_model=translator.model)
         report["calibration"] = calibration
         report["summary"] = summarize(report, splits["val"], calibration, review)
         destination = Path(args.calibrate_out)

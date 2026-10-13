@@ -136,8 +136,8 @@ def main():
     def render_until(deadline):
         """마감 시각까지 매 프레임 렌더 + 출력 + 녹화."""
         nonlocal caption
-        while time.time() < deadline:
-            t0 = time.time()
+        while time.perf_counter() < deadline:
+            t0 = time.perf_counter()
             if caption and t0 - cap_t > C.HUD_HOLD_SEC:
                 caption = ""
             img = hud.render(caption, face_xy=tuple(face),
@@ -155,7 +155,7 @@ def main():
                 import cv2
                 if (cv2.waitKey(1) & 0xFF) == ord("q"):
                     raise KeyboardInterrupt
-            slack = dt - (time.time() - t0)
+            slack = dt - (time.perf_counter() - t0)
             if slack > 0:
                 time.sleep(slack)
 
@@ -173,9 +173,9 @@ def main():
             if "face" in st:
                 face = [float(v) for v in st["face"]]
             if "say" in st:
-                caption, cap_t = st["say"], time.time()
+                caption, cap_t = st["say"], time.perf_counter()
                 print(f"[음성] {st['say']}")
-                render_until(time.time() + 0.35 / a.speed)
+                render_until(time.perf_counter() + 0.35 / a.speed)
             if "sign" in st:
                 print(f"[수어] {st['sign']}")
                 sentence = phrase.feed(st["sign"])
@@ -183,11 +183,11 @@ def main():
                     print(f"        -> 발화: {sentence}")
                     if tts:
                         tts.say(sentence)
-                render_until(time.time() + 0.35 / a.speed)
+                render_until(time.perf_counter() + 0.35 / a.speed)
             if "wait" in st:
-                render_until(time.time() + float(st["wait"]) / a.speed)
+                render_until(time.perf_counter() + float(st["wait"]) / a.speed)
         # 마지막으로 남은 조합 대기를 흘려보낼 시간
-        render_until(time.time() + 2.0 / a.speed)
+        render_until(time.perf_counter() + 2.0 / a.speed)
     except KeyboardInterrupt:
         print("\n중단")
     finally:

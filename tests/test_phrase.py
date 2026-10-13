@@ -1,14 +1,14 @@
 import _path  # noqa: F401  (저장소 루트를 sys.path 에)
-import sys, time
+import sys
+from src import clock
 from src.predictor import PhraseBuilder
 
 def drive(words_with_gaps, window=2.5, flush=1.0):
     """(단어, 앞 단어로부터의 간격초) 리스트를 가상 시계로 재생."""
     pb = PhraseBuilder(window_sec=window, flush_sec=flush)
     now = [1000.0]
-    real = time.time
-    time_mod = sys.modules["src.predictor"].time
-    time_mod.time = lambda: now[0]
+    real = clock.now
+    clock.now = lambda: now[0]       # PhraseBuilder 는 clock.now() 로 대기 시간을 잽니다
     spoken = []
     try:
         for w, gap in words_with_gaps:
@@ -23,7 +23,7 @@ def drive(words_with_gaps, window=2.5, flush=1.0):
             s = pb.poll()
             if s: spoken.append(s)
     finally:
-        time_mod.time = real
+        clock.now = real
     return spoken
 
 cases = [

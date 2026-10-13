@@ -66,7 +66,7 @@ def from_keras(src, dst, seq_len, opset):
 
 
 # ---------------------------------------------------------------- PyTorch
-def load_torch_model(src, arch, in_dim, classes):
+def load_torch_model(src, arch, in_dim, classes, trust_pickle=False):
     import torch
     import torch.nn as nn
 
@@ -75,7 +75,16 @@ def load_torch_model(src, arch, in_dim, classes):
     except Exception:
         pass
 
-    obj = torch.load(str(src), map_location="cpu", weights_only=False)
+    try:
+        # 텐서와 기본 자료형만 복원합니다. state_dict 는 이 경로로 충분합니다.
+        obj = torch.load(str(src), map_location="cpu", weights_only=True)
+    except Exception as error:
+        if not trust_pickle:
+            raise SystemExit(
+                "모듈 전체를 피클로 저장한 파일입니다. 여는 순간 파일 안의 코드가\n"
+                "  실행되므로, 직접 만든 믿을 수 있는 파일일 때만 --trust-pickle 을 주세요.\n"
+                f"  ({type(error).__name__})")
+        obj = torch.load(str(src), map_location="cpu", weights_only=False)
     if isinstance(obj, nn.Module):
         return obj.eval()
 
@@ -111,9 +120,9 @@ def load_torch_model(src, arch, in_dim, classes):
     return model.eval()
 
 
-def from_torch(src, dst, arch, in_dim, classes, seq_len, opset):
+def from_torch(src, dst, arch, in_dim, classes, seq_len, opset, trust_pickle=False):
     import torch
-    model = load_torch_model(src, arch, in_dim, classes)
+    model = load_torch_model(src, arch, in_dim, classes, trust_pickle)
 
     if not in_dim:
         raise SystemExit("--in-dim 을 지정하세요 "
@@ -147,6 +156,8 @@ def main():
     ap.add_argument("--classes", type=int, default=None)
     ap.add_argument("--seq-len", type=int, default=30)
     ap.add_argument("--opset", type=int, default=17)
+    ap.add_argument("--trust-pickle", action="store_true",
+                    help="모듈 전체 피클(.pt)을 엽니다. 파일 안의 코드가 실행되니 직접 만든 파일만")
     a = ap.parse_args()
 
     src = Path(a.src)
@@ -163,7 +174,7 @@ def main():
         x, ref = from_keras(src, dst, a.seq_len, a.opset)
     elif kind == "torch":
         x, ref = from_torch(src, dst, a.arch, a.in_dim, a.classes,
-                            a.seq_len, a.opset)
+                            a.seq_len, a.opset, a.trust_pickle)
     elif kind == "onnx":
         raise SystemExit("이미 ONNX 입니다.")
     else:

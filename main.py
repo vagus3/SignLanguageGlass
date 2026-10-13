@@ -10,7 +10,7 @@
 
 스레드 구성
     [vision]  캡처 + Holistic + LSTM 추론      (C++ 구간에서 GIL 을 놓으므로 실제로 병렬)
-    [stt]     vosk 스트리밍
+    [stt]     sherpa-onnx(기본) / vosk 스트리밍
     [tts]     캐시 wav 재생
     [main]    HUD 렌더 + 화면 출력             (GUI 는 메인 스레드 전용)
 
@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as C
+from src import clock
 from src import landmarks as L
 from src.one_euro import OneEuroPoint
 
@@ -62,7 +63,8 @@ def draw_segment_overlay(cv2, frame, recorder, segmenter):
 # ---------------------------------------------------------------- 비전 스레드
 class VisionThread(threading.Thread):
     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
-                 segment_recorder=None, pose_3d=False, segmenter=None, segment_events=None):
+                 segment_recorder=None, pose_3d=False, segmenter=None, segment_events=None,
+                 track_face=True):
         # daemon 을 클래스 속성으로 두면 Thread.daemon 프로퍼티를 가려서
         # 내부 _daemonic 플래그와 어긋납니다. 생성자로 넘겨야 안전합니다.
         super().__init__(name="vision", daemon=True)
@@ -72,6 +74,7 @@ class VisionThread(threading.Thread):
         self.segment_recorder = segment_recorder
         self.pose_3d = pose_3d
         self.segmenter, self.segment_events = segmenter, segment_events
+        self.track_face = track_face    # 고정 자막·전방 얼굴 카메라면 계산할 필요가 없습니다
         from src.latency import NullTracker
         self.stats = stats or NullTracker()
         # ★ 이름을 _stop 으로 두면 안 됩니다.
@@ -88,6 +91,7 @@ class VisionThread(threading.Thread):
     def run(self):
         import cv2
         from src.camera import CameraReader
+        from src.pose_sequence import from_mediapipe, world_from_mediapipe
 
         cap = CameraReader(camera_index=self.camera_index)
         if not cap.ok():
@@ -106,28 +110,27 @@ class VisionThread(threading.Thread):
                 print(f"[vision] 수어 모델 없음 -> Phase 2 만 동작합니다\n         {e}")
 
         smooth = OneEuroPoint(C.FILTER_MIN_CUTOFF, C.FILTER_BETA)
-        t_prev, n = time.time(), 0
+        t_prev, n = clock.now(), 0
 
         st = self.stats
         while not self._quit.is_set():
-            t0 = time.time()
+            t0 = clock.now()
             ok, frame = cap.read()
             if not ok:
                 continue            # CameraReader 가 내부에서 sleep + 재연결 처리
-            t_cap = time.time()     # 이 프레임을 실제로 손에 넣은 시각
+            t_cap = clock.now()     # 이 프레임을 실제로 손에 넣은 시각 (경과 시간 시계)
             st.add("capture", (t_cap - t0) * 1000)
             h, w = frame.shape[:2]
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             rgb.flags.writeable = False
             res = holistic.process(rgb)
-            t_hol = time.time()
+            t_hol = clock.now()
             st.add("holistic", (t_hol - t_cap) * 1000)
             self.ms_vision = (t_hol - t0) * 1000
 
             # Capture every processed frame before the lossy preview queue.
             if self.segment_recorder is not None:
-                from src.pose_sequence import from_mediapipe, world_from_mediapipe
                 points, mask = from_mediapipe(res)
                 world = world_from_mediapipe(res, (w, h)) if self.pose_3d else (None, None)
                 self.segment_recorder.add(points, mask, t_cap, (w, h), *world)
@@ -145,21 +148,21 @@ class VisionThread(threading.Thread):
                 word = predictor.push(feat, t=t_cap)
                 st.add("infer", predictor.last_ms)
                 if word:
-                    word_t = time.time()
+                    word_t = clock.now()
                     # 확정을 만든 추론에 쓰인 최신 프레임부터 확정까지
                     st.add("recognition",
                            (word_t - predictor.last_frame_t) * 1000)
-            st.add("sign_total", (time.time() - t0) * 1000)
+            st.add("sign_total", (clock.now() - t0) * 1000)
 
-            face = L.face_center_px(res, w, h)
+            face = L.face_center_px(res, w, h) if self.track_face else None
             if face:
-                face = smooth(face[0], face[1], time.time())
+                face = smooth(face[0], face[1], clock.now())
             else:
                 smooth.reset()
 
             n += 1
             if n >= 15:
-                now = time.time()
+                now = clock.now()
                 self.fps = n / max(now - t_prev, 1e-6)
                 t_prev, n = now, 0
 
@@ -224,7 +227,7 @@ class FaceThread(threading.Thread):
                 res = detector.process(rgb)
                 face = L.detection_face_center_px(res, w, h)
                 if face:
-                    face = smooth(face[0], face[1], time.time())
+                    face = smooth(face[0], face[1], clock.now())
                 else:
                     smooth.reset()
                 self._emit(("face", {"face": face, "size": (w, h), "frame": frame}))
@@ -245,13 +248,16 @@ class FaceThread(threading.Thread):
                 pass
 
 
-def speak(sentence, tts, stats=None, word_t=0.0):
+def speak(sentence, tts, stats=None, word_t=0.0, show=None):
     """
     word_t : 그 발화를 촉발한 단어가 '확정된' 시각.
              확정 -> 발화 지시 사이의 시간이 곧 PhraseBuilder 의 조합 대기입니다.
              Phase 1 지연에서 보통 여기가 제일 큰 항목이라 따로 기록합니다.
+    show   : 착용자 확인용으로 HUD 에 띄울 함수 (HudContent.own)
     """
     print(f"        -> 발화: {sentence}")
+    if show is not None:
+        show(sentence)
     if stats is not None and word_t:
         stats.since("phrase_latch", word_t)
     if tts:
@@ -262,6 +268,8 @@ def speak(sentence, tts, stats=None, word_t=0.0):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-stt", action="store_true")
+    ap.add_argument("--stt", choices=["sherpa", "vosk"], default=None,
+                    help="음성 인식 엔진 (기본: config.STT_BACKEND)")
     ap.add_argument("--no-sign", action="store_true")
     ap.add_argument("--no-tts", action="store_true")
     ap.add_argument("--sign-backend", choices=["local", "cloud"], default="local",
@@ -270,6 +278,11 @@ def main():
                     help="cloud: SPACE/c 또는 표준입력 start/stop/cancel로 문장 구간 지정")
     ap.add_argument("--pose-3d", action="store_true",
                     help="cloud: 3D 좌표도 전송 (서버가 --features 3d 체크포인트일 때)")
+    ap.add_argument("--recognize", choices=["server", "device"], default="server",
+                    help="cloud: server=좌표를 보내 서버가 인식(기준선 A), "
+                         "device=이 기기에서 ONNX로 인식해 글로스만 전송(비교 경로 B)")
+    ap.add_argument("--onnx", metavar="PATH",
+                    help="--recognize device 의 CTC ONNX (tools/export_ctc_onnx.py 결과)")
     ap.add_argument("--auto-segment", action="store_true",
                     help="cloud: 손 움직임으로 문장 구간 자동 시작/종료 (SPACE도 계속 사용 가능)")
     ap.add_argument("--viewpoint", choices=["webcam", "glasses"], default=C.SIGN_VIEWPOINT,
@@ -289,19 +302,22 @@ def main():
     ap.add_argument("--stats", nargs="?", const="", default=None,
                     metavar="CSV",
                     help="지연을 구간별로 측정해 종료 시 p50/p95 를 출력합니다. "
-                         "경로를 주면 원본 표본을 CSV 로도 저장합니다.")
+                         "경로를 주면 실행 전체의 원본 표본을 CSV 로 계속 기록합니다.")
     a = ap.parse_args()
+    if a.recognize == "device" and not a.onnx:
+        ap.error("--recognize device 에는 --onnx 가 필요합니다")
     if a.sign_backend == "cloud" and not a.no_sign and a.cloud_controls == "keyboard":
         a.debug = True  # SPACE needs a visible OpenCV event window.
 
     import cv2
-    from src.hud import HudRenderer, load_calib
+    from src.hud import HudContent, HudRenderer, load_calib
     from src.oled_bridge import make_display
     from src.predictor import PhraseBuilder
     from src.audio_gate import AudioGate, NullGate
 
     from src.latency import LatencyTracker, NullTracker
-    stats = LatencyTracker() if a.stats is not None else NullTracker()
+    stats = (LatencyTracker(log_path=a.stats or None) if a.stats is not None
+             else NullTracker())
 
     load_calib()
 
@@ -309,14 +325,25 @@ def main():
     # 유선 이어폰으로 들을 때는 --no-gate 로 꺼도 됩니다.
     gate = NullGate() if a.no_gate else AudioGate(C.AUDIO_GATE_TAIL_SEC)
 
-    cloud = recorder = segmenter = None
+    cloud = recorder = segmenter = controller = None
     commands = queue.Queue()
-    cloud_status = ""
     if a.sign_backend == "cloud" and not a.no_sign:
-        from src.cloud_sign import CloudWorker, SegmentRecorder
+        from src.cloud_sign import CloudClient, CloudWorker, GlossClient, SegmentRecorder
         try:
-            cloud = CloudWorker(stats=stats)
-        except ValueError as e:
+            if a.recognize == "device":
+                from src.ctc_runtime import OnnxRecognizer
+                from src.pose_sequence import needs_world
+                device = OnnxRecognizer(a.onnx)
+                if needs_world(device.feature_set) != a.pose_3d:
+                    ap.error(f"{a.onnx} 는 {device.feature_set} 특징입니다. "
+                             f"--pose-3d 는 3D 모델과만 같이 씁니다")
+                client = GlossClient(device)
+                print(f"[cloud] 기기 인식(B): {device.feature_set}, "
+                      f"{len(device.labels) - 1}개 글로스, 서버에는 글로스만 보냅니다")
+            else:
+                client = CloudClient()
+            cloud = CloudWorker(client, stats=stats)
+        except (OSError, ValueError) as e:
             ap.error(str(e))
         recorder = SegmentRecorder()
         if a.auto_segment:
@@ -324,7 +351,6 @@ def main():
             segmenter = ActivitySegmenter(viewpoint=a.viewpoint,
                                           rest_ratio=C.SEGMENT_REST_RATIO)
         cloud.start()
-        cloud_status = "수어 입력 대기"
         if a.cloud_controls == "stdin":
             def read_commands():
                 for line in sys.stdin:
@@ -343,7 +369,8 @@ def main():
     vq = queue.Queue(maxsize=1) if need_vision else None
     vision = (VisionThread(vq, enable_sign=not a.no_sign and cloud is None, stats=stats,
                            camera_index=sign_index, segment_recorder=recorder,
-                           pose_3d=a.pose_3d, segmenter=segmenter, segment_events=commands)
+                           pose_3d=a.pose_3d, segmenter=segmenter, segment_events=commands,
+                           track_face=not a.fixed_caption and not separate_face)
               if need_vision else None)
     if vision:
         vision.start()
@@ -358,7 +385,7 @@ def main():
     if not a.no_stt:
         from src.stt_worker import SttWorker
         sq = queue.Queue()
-        stt = SttWorker(sq, gate=gate)
+        stt = SttWorker(sq, gate=gate, backend=a.stt)
         stt.start()
 
     tts = None
@@ -368,49 +395,20 @@ def main():
         tts.start()
 
     hud = HudRenderer()
+    content = HudContent(hud)
     display = make_display(a.display)
     phrase = PhraseBuilder()
+    if cloud is not None:
+        from src.cloud_control import CloudController
+        controller = CloudController(cloud, recorder, content, tts=tts, stats=stats)
 
-    caption, is_partial, cap_t = "", False, 0.0
     pending_word_t = 0.0        # 아직 발화 안 된 단어가 확정된 시각
     last_face, last_size = None, (C.CAM_W, C.CAM_H)
 
-    backend = (a.display or C.DISPLAY_BACKEND).lower()
     has_window = bool((a.debug and (vision or face_thread))
                       or getattr(display, "has_window", False))
 
     print("실행 중. " + ("q 로 종료." if has_window else "Ctrl+C 로 종료."))
-
-    def handle_cloud_command(command):
-        nonlocal cloud_status
-        if cloud is None:
-            return
-        automatic = command.startswith("auto_")
-        command = command.removeprefix("auto_")
-        if command == "discard":
-            # Too short to be a sentence; unlike cancel, keep any pending translation.
-            recorder.cancel()
-            cloud_status = "수어 입력 대기"
-        elif command == "cancel":
-            recorder.cancel()
-            cloud.cancel()
-            cloud_status = "수어 입력 취소"
-        elif command == "start":
-            if cloud.busy:
-                cloud_status = "처리 중입니다"
-            elif not recorder.active:
-                recorder.start(pre_roll=0.3 if automatic else 0.0)
-                cloud_status = "수어 녹화 중"
-        elif command == "stop":
-            if not recorder.active:
-                return
-            try:
-                sequence, origin_t = recorder.finish()
-                if cloud.submit(sequence, origin_t):
-                    cloud_status = "수어 번역 중"
-            except ValueError as e:
-                cloud_status = "수어를 다시 입력하세요"
-                print("[cloud] 구간 취소:", e)
 
     try:
         while True:
@@ -431,7 +429,7 @@ def main():
                     # 있어서, 완성되면 문장으로 / 아니면 poll() 이 흘려보냅니다.
                     sentence = phrase.feed(payload["word"])
                     if sentence:
-                        speak(sentence, tts, stats, payload["word_t"])
+                        speak(sentence, tts, stats, payload["word_t"], show=content.own)
                     else:
                         pending_word_t = payload["word_t"]
                 if a.debug:
@@ -476,36 +474,16 @@ def main():
             # 조합 대기가 끝난 단어를 흘려보냅니다 (이중 발화 방지의 나머지 절반)
             pend = phrase.poll()
             if pend:
-                speak(pend, tts, stats, pending_word_t)
+                speak(pend, tts, stats, pending_word_t, show=content.own)
                 pending_word_t = 0.0
 
-            if cloud is not None:
+            if controller is not None:
                 while not commands.empty():
                     command = commands.get_nowait()
                     if command == "quit":
                         raise KeyboardInterrupt
-                    handle_cloud_command(command)
-                if recorder.error:
-                    cloud_status = "입력 취소: 다시 녹화하세요"
-                item = cloud.poll()
-                if item:
-                    result, origin_t = item
-                    cloud_status = {
-                        "no_sign": "수어가 감지되지 않았습니다",
-                        "uncertain": "수어를 다시 입력하세요",
-                        "unavailable": "번역 서버 연결을 확인하세요",
-                        "expired": "번역 요청이 취소 또는 만료됐습니다",
-                    }.get(result["status"], "")
-                    if result["status"] == "ok":
-                        text = result["text"]
-                        cloud_status = text
-                        print("[cloud 번역]", text)
-                        stats.since("cloud_response", origin_t)
-                        if result.get("auto_speech") and not result.get("mock"):
-                            if tts:
-                                tts.say(text, origin_t=origin_t)
-                        else:
-                            print("[cloud] 미검증/모의 결과: 텍스트만 표시합니다.")
+                    controller.command(command)
+                controller.tick()
 
             # ---- STT ----
             if sq is not None:
@@ -515,17 +493,16 @@ def main():
                         print("[stt]", text)
                         sq = None
                         break
-                    caption, is_partial, cap_t = text, (kind == "partial"), time.time()
+                    content.partner(text, partial=(kind == "partial"))
                     if kind == "final":
                         print(f"[음성] {text}")
 
             # ---- HUD ----
-            if caption and time.time() - cap_t > C.HUD_HOLD_SEC:
-                caption, is_partial = "", False
+            # 실물 HUD 는 한 장에 더 최근 내용을, 노트북 미리보기는 두 영역을 함께.
+            face_xy = None if a.fixed_caption else last_face
             with stats.span("render"):
-                img = hud.render(caption or cloud_status,
-                                 face_xy=None if a.fixed_caption else last_face,
-                                 cam_size=last_size, partial=is_partial)
+                img = (content.dual(face_xy, last_size) if getattr(display, "dual", False)
+                       else content.frame(face_xy, last_size))
             with stats.span("display"):
                 display.show(img)
 
@@ -536,11 +513,11 @@ def main():
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     break
-                if cloud is not None and a.cloud_controls == "keyboard":
+                if controller is not None and a.cloud_controls == "keyboard":
                     if key == ord(" "):
-                        handle_cloud_command("stop" if recorder.active else "start")
+                        controller.toggle()
                     elif key == ord("c"):
-                        handle_cloud_command("cancel")
+                        controller.command("cancel")
             else:
                 time.sleep(0.01)
     except KeyboardInterrupt:
@@ -578,7 +555,8 @@ def main():
             if a.stats:
                 saved = stats.save_csv(a.stats)
                 if saved:
-                    print(f"  원본 표본 저장: {saved}")
+                    print(f"  원본 표본 저장(실행 전체): {saved}")
+            stats.close()
 
 
 if __name__ == "__main__":

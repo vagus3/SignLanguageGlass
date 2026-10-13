@@ -2,6 +2,7 @@
 import _path  # noqa: F401  (저장소 루트를 sys.path 에)
 import sys, time, types
 import numpy as np
+from src import clock
 from src.latency import LatencyTracker, NullTracker
 
 stats = LatencyTracker()
@@ -28,7 +29,7 @@ t.start()
 
 import src.build_tts_cache as B
 for i in range(5):
-    word_t = time.time()
+    word_t = clock.now()                   # 지연 시작 시각은 clock.now() 기준
     time.sleep(0.30)                       # PhraseBuilder 조합 대기 흉내
     stats.since("phrase_latch", word_t)
     key = B.cache_path(f"문장{i}").stem
@@ -44,6 +45,8 @@ for k in ("holistic", "infer", "sign_total", "phrase_latch", "tts_start", "end_t
 e2e = s["end_to_end"][1]; latch = s["phrase_latch"][1]
 print(f"검증: end_to_end({e2e:.0f}ms) > phrase_latch({latch:.0f}ms) 이어야 함 -> {e2e > latch}")
 assert e2e > latch
+# 두 시계를 섞으면 위 비교는 둘 다 음수여도 통과합니다. 값 자체가 그럴듯한지 확인합니다.
+assert 250 < latch < 2000 and 250 < e2e < 3000, (latch, e2e)
 
 csv = stats.save_csv("/tmp/lat_test.csv")
 print(f"CSV 저장 확인: {csv}")

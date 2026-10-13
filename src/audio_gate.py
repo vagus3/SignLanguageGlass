@@ -21,9 +21,10 @@
     tts 쪽:  with gate.output():  ...재생...
     stt 쪽:  if not gate.is_open(): 오디오 버림
 """
-import time
 import threading
 from contextlib import contextmanager
+
+from src import clock
 
 
 class AudioGate:
@@ -41,12 +42,12 @@ class AudioGate:
         with self._lock:
             self._depth = max(0, self._depth - 1)
             if self._depth == 0:
-                self._until = time.time() + self.tail_sec
+                self._until = clock.now() + self.tail_sec
 
     def is_open(self):
         """True 면 마이크 입력을 받아도 되는 상태."""
         with self._lock:
-            return self._depth == 0 and time.time() >= self._until
+            return self._depth == 0 and clock.now() >= self._until
 
     @contextmanager
     def output(self):

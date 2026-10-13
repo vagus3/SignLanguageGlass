@@ -20,10 +20,12 @@ Phase 2. 공간 AR 말풍선 렌더러
 """
 import sys
 import json
+from collections import OrderedDict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config as C
+from src import clock
 
 
 # ---------------------------------------------------------------- 캘리브레이션
@@ -79,9 +81,21 @@ def camera_to_hud(cx, cy, cam_w, cam_h):
 
 # ---------------------------------------------------------------- 렌더러
 class HudRenderer:
+    # 같은 글·같은 위치면 매 프레임 다시 그리지 않습니다. 화면 한 장은 1KB 남짓입니다.
+    CACHE_SIZE = 64
+
     def __init__(self):
         from PIL import ImageFont
         self.font = self._load_font(ImageFont)
+        self._line_cache = OrderedDict()
+        self._image_cache = OrderedDict()
+
+    @classmethod
+    def _remember(cls, cache, key, value):
+        cache[key] = value
+        if len(cache) > cls.CACHE_SIZE:
+            cache.popitem(last=False)
+        return value
 
     # 갈무리가 없을 때 대신 쓸 시스템 한글 폰트. 픽셀 폰트가 아니라 11px 에서
     # 뭉개지지만, 적어도 글자를 읽을 수는 있습니다. PIL 기본 폰트는 한글
@@ -150,9 +164,35 @@ class HudRenderer:
           실제 폰트 메트릭으로 재고, 가능하면 어절(공백) 경계에서 끊습니다.
           HUD_MAX_CHARS_PER_LINE 은 이제 안전 상한으로만 씁니다.
         """
-        max_w = max_w or (C.OLED_W - 10)     # 테두리 1 + 안쪽 여백 4, 좌우
         max_lines = max_lines or C.HUD_MAX_LINES
+        lines = self._lines(text, max_w)
+        if len(lines) > max_lines:
+            lines = lines[-max_lines:]
+            lines[0] = "..." + lines[0][1:]   # 픽셀 폰트에 '…' 글리프가 없을 수 있음
+        return lines
 
+    def paginate(self, text, max_w=None, max_lines=None):
+        """줄바꿈한 전체 줄을 화면 높이만큼씩 나눈 페이지 목록. 아무것도 버리지 않습니다.
+
+        내 번역 결과는 앞부분을 잘라내면 뜻이 바뀌므로 wrap() 대신 이걸 씁니다.
+        """
+        if not text or not text.strip():
+            return []
+        max_lines = max_lines or C.HUD_MAX_LINES
+        lines = self._lines(text, max_w)
+        return [lines[i:i + max_lines] for i in range(0, len(lines), max_lines)]
+
+    def _lines(self, text, max_w=None):
+        """폭 기준 줄바꿈 결과 전체. 폰트 폭 측정이 비싸서 결과를 기억합니다."""
+        max_w = max_w or (C.OLED_W - 10)     # 테두리 1 + 안쪽 여백 4, 좌우
+        key = (text, max_w)
+        if key in self._line_cache:
+            self._line_cache.move_to_end(key)
+        else:
+            self._remember(self._line_cache, key, tuple(self._layout(text, max_w)))
+        return list(self._line_cache[key])
+
+    def _layout(self, text, max_w):
         words = text.replace("\n", " ").split()
         if not words:
             return [""]
@@ -173,10 +213,6 @@ class HudRenderer:
             cur = w
         if cur:
             lines.append(cur)
-
-        if len(lines) > max_lines:
-            lines = lines[-max_lines:]
-            lines[0] = "..." + lines[0][1:]   # 픽셀 폰트에 '…' 글리프가 없을 수 있음
         return lines
 
     def render(self, text, face_xy=None, cam_size=None, partial=False):
@@ -184,22 +220,41 @@ class HudRenderer:
         1비트 PIL 이미지(128x64) 반환.
         face_xy 가 있으면 얼굴 옆에 말풍선, 없으면 하단 고정 자막.
         """
+        return self._draw(self.wrap(text) if text else None, face_xy, cam_size, partial)
+
+    def render_lines(self, lines, page=0, pages=1):
+        """이미 나눈 줄을 하단 고정 자막으로. 여러 페이지면 오른쪽 위에 점으로 표시."""
+        return self._draw(lines, None, None, False, page, pages)
+
+    def _draw(self, lines, face_xy, cam_size, partial, page=0, pages=1):
+        # 키는 그림을 정하는 값 전부입니다. 얼굴은 보정까지 적용한 HUD 좌표로 넣어
+        # 시차 보정이 바뀌면 자연히 다시 그립니다.
+        face = (camera_to_hud(face_xy[0], face_xy[1], *cam_size)
+                if lines and face_xy and cam_size else None)
+        key = (tuple(lines) if lines else None, face, bool(partial), page, pages)
+        if key in self._image_cache:
+            self._image_cache.move_to_end(key)
+        else:
+            self._remember(self._image_cache, key,
+                           self._paint(lines, face, partial, page, pages))
+        return self._image_cache[key].copy()   # 호출부가 덧그려도 캐시는 그대로
+
+    def _paint(self, lines, face, partial, page, pages):
         from PIL import Image, ImageDraw
 
         img = Image.new("1", (C.OLED_W, C.OLED_H), 0)
         d = ImageDraw.Draw(img)
-        if not text:
+        if not lines:
             return img
 
-        lines = self.wrap(text)
         lh = C.HUD_FONT_SIZE + 2
         bw = int(max(self.text_w(ln) for ln in lines)) + 8
         bh = lh * len(lines) + 6
         bw, bh = min(bw, C.OLED_W - 2), min(bh, C.OLED_H - 2)
 
         anchor = None
-        if face_xy and cam_size:
-            hx, hy, inside = camera_to_hud(face_xy[0], face_xy[1], *cam_size)
+        if face:
+            hx, hy, inside = face
             if inside:
                 anchor = (hx, hy)
             else:
@@ -225,6 +280,14 @@ class HudRenderer:
             d.text((bx + 4, by + 3 + i * lh), ln, font=self.font, fill=1)
         if partial:
             d.point([(bx + bw - 2, by + 2)], fill=1)   # 진행 중 표시
+        # 페이지 점: 글자 아래 안쪽 여백에, 현재 페이지만 굵게.
+        y = by + bh - 2
+        for i in range(pages if pages > 1 else 0):
+            x = bx + bw - 3 - (pages - 1 - i) * 4
+            if i == page:
+                d.rectangle([x - 1, y - 1, x, y], fill=1)
+            else:
+                d.point([(x, y)], fill=1)
         return img
 
     def calibration_marker(self, face_xy=None, cam_size=None):
@@ -276,6 +339,86 @@ class HudRenderer:
             d.polygon([(C.OLED_W // 2, h - 3),
                        (C.OLED_W // 2 - 5, h - 11),
                        (C.OLED_W // 2 + 5, h - 11)], fill=1)
+
+
+# ---------------------------------------------------------------- 표시 내용
+class HudContent:
+    """HUD 에 무엇을 띄울지 정합니다: 상대의 말, 내 번역 결과, 상태 한 줄.
+
+    실물 HUD(128x64 한 장): 상대의 말과 내 결과 중 더 최근 것. 상대의 말은
+    얼굴 옆 말풍선(뒤쪽 줄 유지), 내 결과는 하단 고정 자막이며 길면 잘라내지
+    않고 페이지를 넘깁니다. 둘 다 유지 시간이 지나면 상태 한 줄을 보입니다.
+    노트북 미리보기(dual): 위 = 내 결과/상태, 아래 = 상대의 말을 항상 함께.
+    """
+
+    def __init__(self, renderer, *, hold_sec=None, own_hold_sec=None, page_sec=None, now=None):
+        self.renderer = renderer
+        self.hold_sec = C.HUD_HOLD_SEC if hold_sec is None else hold_sec
+        self.own_hold_sec = C.HUD_OWN_HOLD_SEC if own_hold_sec is None else own_hold_sec
+        self.page_sec = C.HUD_PAGE_SEC if page_sec is None else page_sec
+        self.now = now or clock.now
+        self._partner = ("", False, float("-inf"))     # (문장, partial, 시각)
+        self._own = ("", [], float("-inf"))            # (문장, 페이지, 시각)
+        self._status = ""
+        # 어느 쪽이 더 최근인지는 도착 순서로 정합니다. 시각은 해상도 안에서 같을 수 있습니다.
+        self._order = {"partner": 0, "own": 0}
+        self._events = 0
+
+    def _arrived(self, kind):
+        self._events += 1
+        self._order[kind] = self._events
+
+    def partner(self, text, partial=False):
+        self._partner = (text, partial, self.now())
+        self._arrived("partner")
+
+    def own(self, text):
+        self._own = (text, self.renderer.paginate(text), self.now())
+        self._arrived("own")
+
+    def status(self, text):
+        self._status = text
+
+    def _live(self, now):
+        text, partial, t_partner = self._partner
+        partner = bool(text) and now - t_partner <= self.hold_sec
+        _, pages, t_own = self._own
+        # 모든 페이지가 한 번씩은 보이도록 유지 시간을 늘립니다.
+        own = bool(pages) and now - t_own <= max(self.own_hold_sec, len(pages) * self.page_sec)
+        return partner, own
+
+    def _own_image(self, now):
+        _, pages, t_own = self._own
+        page = int((now - t_own) / self.page_sec) % len(pages)
+        return self.renderer.render_lines(pages[page], page, len(pages))
+
+    def _partner_image(self, face_xy, cam_size):
+        text, partial, _ = self._partner
+        return self.renderer.render(text, face_xy=face_xy, cam_size=cam_size, partial=partial)
+
+    def frame(self, face_xy=None, cam_size=None):
+        """실물 HUD 한 장."""
+        now = self.now()
+        partner, own = self._live(now)
+        if own and (not partner or self._order["own"] > self._order["partner"]):
+            return self._own_image(now)
+        if partner:
+            return self._partner_image(face_xy, cam_size)
+        return self.renderer.render(self._status)
+
+    def dual(self, face_xy=None, cam_size=None):
+        """노트북 미리보기 두 영역: 위 = 내 결과/상태, 아래 = 상대의 말."""
+        from PIL import Image
+        now = self.now()
+        partner, own = self._live(now)
+        top = self._own_image(now) if own else self.renderer.render(self._status)
+        bottom = (self._partner_image(face_xy, cam_size) if partner
+                  else self.renderer.render(""))
+        img = Image.new("1", (C.OLED_W, C.OLED_H * 2 + 2), 0)
+        img.paste(top, (0, 0))
+        img.paste(1, (0, C.OLED_H, C.OLED_W, C.OLED_H + 1))     # 구분선
+        img.paste(bottom, (0, C.OLED_H + 2))
+        return img
 
 
 # ------------------------------------------------------- SSD1306/1309 패킹

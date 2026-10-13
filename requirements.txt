@@ -34,6 +34,8 @@ soundfile==0.12.1
 #   배포하지 않아 mac 에서 설치가 실패합니다(Windows/Linux 만 있음).
 #   0.3.44 가 mac 을 포함해 설치되는 마지막 버전입니다.
 vosk==0.3.44
+# 기본 STT 엔진. 스트리밍 Zipformer 한국어 모델을 onnx 로 실행합니다(자체 런타임 포함).
+sherpa-onnx==1.13.8
 # webrtcvad 원본은 윈도우에서 컴파일이 필요합니다. wheels 배포판을 씁니다.
 webrtcvad-wheels==2.0.14
 

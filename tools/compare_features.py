@@ -17,7 +17,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.pose_sequence import FEATURE_PRESETS, FEATURE_SETS
 from src.continuous_sign import Recognizer
-from src.train_continuous import prepare_training, train_one
+from src.train_continuous import dataset_sources, prepare_training, train_one
 from tools.evaluate_continuous import run_evaluation, summarize
 
 
@@ -36,7 +36,8 @@ def compare(manifest, out, feature_sets, *, epochs=30, batch=8, seed=0, device="
     for name in feature_sets:
         begin = time.perf_counter()
         report = train_one(splits, labels, name, out / name, epochs=epochs, batch=batch,
-                           seed=seed, device=device, skipped=skipped)
+                           seed=seed, device=device, skipped=skipped,
+                           data_sources=dataset_sources(manifest))
         seconds = time.perf_counter() - begin
         evaluation = run_evaluation(Recognizer(out / name / "ctc.pt"), splits["val"])
         summary = summarize(evaluation, splits["val"], {})

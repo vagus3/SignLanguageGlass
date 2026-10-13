@@ -10,7 +10,7 @@ features_3d never subtracts a hand point from a body point.
 """
 from dataclasses import dataclass
 import numpy as np
-from src.features_v2 import BODY_NAMES, MP_POSE, OP_POSE
+from src.joints import BODY_NAMES, MP_POSE, OP_POSE
 
 VERSION = "pose2d-sequence-v1"
 VERSION_3D = "pose3d-sequence-v2"
@@ -80,13 +80,29 @@ class PoseSequence:
             raise ValueError("world_mask without world")
         return self
 
-    def to_dict(self):
+    def to_dict(self, decimals=None, world_decimals=None):
+        """JSON-ready dict.
+
+        Points are written as the shortest decimals that parse back to the same
+        float32 (0.4124 rather than 0.41240000724792480), which is lossless for this
+        contract and about halves a gzip body. decimals/world_decimals additionally
+        round 2D (image fraction) and 3D (meters) points, whose units differ; that is
+        lossy, off by default, and tools/evaluate_rounding.py decides on real data
+        whether recognition tolerates it. Timestamps are never rounded.
+        """
         self.validate()
+
+        def values(array, places):
+            if places is None:
+                return _exact32(array).tolist()
+            return np.round(array.astype(np.float64), places).tolist()
+
         data = {"version": self.version, "timestamps": self.timestamps.tolist(),
-                "coordinates": self.coordinates.tolist(), "mask": self.mask.tolist(),
+                "coordinates": values(self.coordinates, decimals), "mask": self.mask.tolist(),
                 "image_size": list(self.image_size)}
         if self.version == VERSION_3D:
-            data.update(world=self.world.tolist(), world_mask=self.world_mask.tolist())
+            data.update(world=values(self.world, world_decimals),
+                        world_mask=self.world_mask.tolist())
         return data
 
     @classmethod
@@ -109,6 +125,23 @@ class PoseSequence:
             world = (d["world"], d["world_mask"]) if "world" in d.files else (None, None)
             return cls(d["timestamps"], d["coordinates"], d["mask"],
                        tuple(d["image_size"].tolist()), str(d["version"]), *world).validate()
+
+
+def _exact32(array):
+    """float64 values with the fewest decimals (up to 9) that still equal the float32.
+
+    Values no short decimal reproduces keep their exact float64 widening, so the
+    result always converts back to the original float32 array bit for bit.
+    """
+    a32 = np.asarray(array, np.float32)
+    exact = a32.astype(np.float64)
+    out, done = exact.copy(), np.zeros(a32.shape, bool)
+    for places in range(1, 10):
+        rounded = np.round(exact, places)
+        ok = ~done & (rounded.astype(np.float32) == a32)
+        out[ok] = rounded[ok]
+        done |= ok
+    return out
 
 
 def _clean_frame(points, mask, input_is_mirrored=False):

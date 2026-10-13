@@ -29,7 +29,6 @@ HUD 시차(Parallax) 보정 도구
     s         저장            q   저장 없이 종료
 """
 import sys
-import time
 import argparse
 from pathlib import Path
 
@@ -39,6 +38,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config as C
 from src import landmarks as L
+from src import clock
 from src.camera import open_camera
 import src.hud as hud_mod
 from src.one_euro import OneEuroPoint
@@ -82,7 +82,7 @@ def main():
 
             face = L.face_center_px(res, w, h)
             if face:
-                face = smooth(face[0], face[1], time.time())
+                face = smooth(face[0], face[1], clock.now())
             else:
                 smooth.reset()
 

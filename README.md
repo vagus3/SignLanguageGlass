@@ -9,10 +9,16 @@
 
 두 방향이 동시에 돌아가고, 서로의 소리가 되먹임되지 않도록 반이중 게이트가 사이에 있습니다.
 
-**새 실행 경로:** --sign-backend cloud는 문장 단위 관절 좌표를 서버로 보내
-CTC 연속 수어 인식과 vLLM 한국어 문장 생성을 연결합니다. 기본값은 기존
-local 경로입니다. 데이터 규격·학습·모의 서버·GPU 실행·자동 발화 검증은
-[CLOUD_SETUP.md](CLOUD_SETUP.md)를 참고하세요. 실제 연속 수어 데이터와
+**실행 경로 두 가지:**
+
+- **기준 경로 (개발 목표):** `--sign-backend cloud`. 문장 단위 관절 좌표를 서버로 보내 CTC 연속
+  수어 인식 후 문장을 만듭니다. 문장은 검수 문장 → 언어 모델(vLLM) 순으로 만들고, 실패하면
+  미리보기만 표시합니다.
+- **시연 대안:** `--sign-backend local`(현재 CLI 기본값). 고립 단어 ONNX 분류와 규칙 문장 조합입니다.
+  데이터 확보가 늦어질 때 쓰는 대안이며, 이 경로로 시연할 때는 시연 범위를 따로 밝힙니다.
+
+기본값은 서버/장치 인식 비교(A/B)와 시연 목적에 따라 정합니다. 데이터 규격·학습·모의 서버·GPU
+실행·자동 발화 검증은 [CLOUD_SETUP.md](CLOUD_SETUP.md)를 참고하세요. 실제 연속 수어 데이터와
 모델이 아직 없어 번역 성능은 검증되지 않았습니다.
 
 ---
@@ -23,14 +29,14 @@ local 경로입니다. 데이터 규격·학습·모의 서버·GPU 실행·자�
 
 | | 상태 |
 |---|---|
-| 소스 모듈·회귀 테스트 | 🟡 28개 통과 (PyTorch→ONNX, CTC·모의 클라우드 통합 포함); 실기기 관통 테스트 미완료 |
-| 클라우드 연속 번역 | 🟡 좌표 학습·API·vLLM 연동 구현; 실제 문장 데이터·GPU 모델·번역 품질 검증 필요 |
+| 소스 모듈·회귀 테스트 | 🟡 48개 (PyTorch→ONNX, CTC·모의 클라우드 통합, HTTP 무인 소크 포함). 깃허브에 올릴 때마다 자동 실행(`.github/workflows/tests.yml`); 실기기 관통 테스트 미완료 — 직접 할 테스트는 [`TEST_CHECKLIST.md`](TEST_CHECKLIST.md) |
+| 클라우드 연속 번역 | 🟡 좌표 학습·API·vLLM 연동, 기기 인식 비교 경로(B, `--recognize device`)와 A/B 측정 도구 구현; 실제 문장 데이터·GPU 모델·번역 품질 검증 필요 |
 | 3D 방향·자동 구간·특징 비교 | 🟡 3D 손바닥 방향/손목 깊이 분기, 손 움직임 자동 구간(`--auto-segment`), 구성 비교 도구 구현; 합성 데이터로만 검증 |
 | 학습 의존성 | ✅ PyTorch 2.4.1 / ONNX 1.16.2 / scikit-learn 1.5.2 설치 |
 | 학습된 모델 `models/sign_lstm.onnx` | ❌ 없음 — 데이터 수집·학습 필요 |
 | 직접 수집한 데이터 `data/raw/**/*.npy` | ❌ 0개 |
 | AI Hub 샘플 | 🟡 3D 변환 완료: 100클립→21시퀀스/20동작 그룹; 한국어 뜻 매핑·추가 화자 필요 |
-| vosk 한국어 STT 모델 `models/vosk-ko/` | ✅ 공식 모델 설치·디코딩 확인; 합성음성 3문장 오인식, 품질 평가 필요 |
+| 한국어 STT | 🟡 기본 sherpa-onnx 스트리밍 Zipformer(`models/sherpa-ko-174m-chunk32/`). 합성음성 22문장 CER 13.0% (vosk 58.0%); 실제 목소리 비교 필요 |
 | TTS 캐시 `assets/tts_cache/*.wav` | ✅ macOS Yuna 22개, 16kHz PCM 모노·무음 아님 확인 |
 | 한글 픽셀 폰트 `assets/fonts/Galmuri11.ttf` | ✅ Galmuri v2.40.4 + LICENSE.txt 설치 |
 | 하드웨어 (OLED / 광학계) | ❌ 미착수 |
@@ -44,6 +50,9 @@ local 경로입니다. 데이터 규격·학습·모의 서버·GPU 실행·자�
 [`PROJECT_REVIEW.md`](PROJECT_REVIEW.md)에 정리했습니다.
 경진대회 당일 전체/폴백 모드와 2인 역할은 [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md)를 따릅니다.
 AI Hub 3D 활용 및 이전 검토 정정은 [`AIHUB_TRANSFER.md`](AIHUB_TRANSFER.md)에 정리했습니다.
+vLLM·클라우드 구조 평가, 성능·리팩토링 목록, LLM 학습 판단, AI Hub 확장 계획은
+[`REVIEW_AND_PLAN.md`](REVIEW_AND_PLAN.md)에 있습니다. 사람이 장비·데이터로 직접 해야 하는
+테스트와 의미 검수 절차는 [`TEST_CHECKLIST.md`](TEST_CHECKLIST.md)에 있습니다.
 
 ---
 
@@ -68,7 +77,7 @@ MediaPipe와 ONNX는 C++ 구간에서 GIL을 놓으므로 실제로 병렬입니
     │ say()                             ▲ Queue()
     ▼                                   │
 ┌─ [tts] ──────────────┐   ┌─ [stt] ────┴──────────────┐
-│  캐시 wav 재생        │   │  vosk 스트리밍            │
+│  캐시 wav 재생        │   │  sherpa-onnx 스트리밍     │
 └──────────┬───────────┘   └────────────▲──────────────┘
            │  게이트 닫음                │  게이트 열림일 때만 수용
            └────────►  AudioGate  ◄──────┘
@@ -106,7 +115,7 @@ TtsPlayer → 안경 스피커                      src/tts_player.py
 ```
 안경 마이크
   ▼
-SttWorker (vosk 스트리밍)                    src/stt_worker.py
+SttWorker (sherpa-onnx 스트리밍)             src/stt_worker.py
   │  partial(말하는 중) / final(발화 확정)
   ▼                          landmarks.face_center_px()  ← 상대 얼굴 위치
 HudRenderer.render()  ◄──────  OneEuroPoint 로 떨림 제거
@@ -130,14 +139,25 @@ src/
   one_euro.py          저지연 좌표 스무딩 (이동평균보다 지연이 적음)
   predictor.py       ★ 슬라이딩 추론 + 3단 확정 + 문장 조합
   runtime.py         ★ 통합 추론 런타임 (onnx / torch / keras)
-  features_v2.py       AI Hub(OpenPose) ↔ MediaPipe 공통 부분집합, 101차원
+  joints.py            MediaPipe·OpenPose 공통 관절 정의 (단일 출처)
+  features_v2.py       AI Hub(OpenPose) ↔ MediaPipe 공통 부분집합, 101차원 (레거시)
   hand_shape3d.py      AI Hub 3D ↔ MediaPipe Hands world 공통 손 모양, 462차원
-  hud.py             ★ 좌표변환 + 말풍선 렌더 + SSD1306 패킹
+  hud.py             ★ 좌표변환 + 말풍선 렌더 + SSD1306 패킹 + 표시 내용 선택(HudContent)
   oled_bridge.py       디스플레이 백엔드 (preview / serial / pi / null)
-  stt_worker.py        vosk 스트리밍 STT 스레드
+  stt_worker.py        스트리밍 STT 스레드 (sherpa-onnx 기본, vosk 대체)
   tts_player.py        비동기 TTS 재생
   audio_gate.py        반이중 게이트 (에코 루프 차단)
-  latency.py           지연 측정 하네스 (p50 / p95)
+  latency.py           지연 측정 하네스 (p50 / p95, 최근 표본·실행 전체 구분)
+  clock.py             경과 시간 시계(clock.now) / Unix 시각(clock.unix_time) 분리
+  pose_sequence.py     cloud 경로 좌표 규격(2D/3D)과 특징
+  continuous_sign.py   CTC 연속 인식 학습·추론 (PyTorch)
+  ctc_runtime.py       torch 없는 CTC 디코딩·ONNX 추론 (장치 인식 비교용)
+  translation.py       용어집·검수 문장·언어 모델·실패 시 미리보기
+  sign_server.py       번역 API 서버 (FastAPI)
+  cloud_sign.py        장치 쪽 구간 녹화·서버 클라이언트
+  cloud_control.py     cloud 경로 명령·결과 처리 (main.py 에서 분리)
+  segmenter.py         손 움직임 기반 자동 문장 구간
+  data_sources.py      학습 데이터 출처 (manifest → 모델 → /health)
   collect.py           Step 1-1 데이터 수집기
   train.py             Step 1-2 LSTM 학습
   calibrate.py         시차(parallax) 보정 도구
@@ -153,10 +173,20 @@ tools/
   check_mount.py       실제 장착 시점 손/얼굴 검출률과 FPS 측정
   prepare_aihub3d.py   3D 손 데이터 변환·중복 제거·원본 동작 그룹 감사
   verify_assets.py     모델/폰트/TTS 및 합성음성→STT 검사
+  prepare_continuous.py  OpenPose JSON → 문장 좌표 데이터셋
+  extract_mediapipe.py   원본 영상 → 실행 시와 같은 MediaPipe 좌표 데이터셋
+  compare_extractors.py  두 데이터셋의 좌표 차이·프레임 어긋남·좌우 손 비교
+  export_ctc_onnx.py     CTC 체크포인트 → ONNX (PyTorch 동등성 검사 포함)
+  benchmark_paths.py     서버 인식(A) / 기기 인식(B) 배치 비교: 지연·전송량·CPU
+  evaluate_rounding.py   좌표 반올림이 크기·특징·인식에 주는 영향
+  compare_stt.py         STT 엔진 비교: CER·RTF·자막 시점
+  review_sentences.py    의미 검수 시트 내보내기/가져오기 (검수 문장·보정 연결)
+  evaluate_segments.py   자동 구간 평가: 경계 지연·잘림·분할·오검출
+  soak.py                HTTP 무인 소크 (장애 주입, 발화 감사, 메모리·스레드)
 
 tests/
   run_all.py           전체 테스트 실행 (pytest 불필요)
-  test_*.py            회귀 테스트 25종 (서버·학습 검사는 선택 의존성 필요)
+  test_*.py            회귀 테스트 48종 (서버·학습 검사는 선택 의존성 필요)
 
 firmware/
   oled_bridge.ino      PC 구조에서만 필요한 USB↔SPI 브리지 펌웨어
@@ -243,7 +273,8 @@ STT와 수어 인식 전체를 실행할 수 없습니다.
 |---|---:|---|
 | 소스코드·문서·`requirements*.txt`·테스트 | 포함 | `git clone` |
 | Python 가상환경과 PyTorch / ONNX / Vosk **패키지** | 제외 | 아래 `pip install` 실행 |
-| Vosk 한국어 **음성 모델** `models/vosk-ko/` | 제외 | [공식 다운로드](https://alphacephei.com/vosk/models/vosk-model-small-ko-0.22.zip)를 같은 경로에 압축 해제 |
+| 기본 STT 모델 `models/sherpa-ko-174m-chunk32/` | 제외 | 아래 "STT 모델" 명령으로 내려받기 (약 160MB) |
+| 대체 STT: Vosk 한국어 모델 `models/vosk-ko/` | 제외 | [공식 다운로드](https://alphacephei.com/vosk/models/vosk-model-small-ko-0.22.zip)를 같은 경로에 압축 해제 (`--stt vosk`일 때만) |
 | 학습 완료 ONNX 모델 `models/sign_lstm.onnx` | 제외 | [이 프로젝트 Releases](../../releases) / 팀 Drive에서 내려받거나 직접 학습 |
 | AI Hub 원본·전처리 데이터 | 제외 | [AI Hub](https://aihub.or.kr/) 권한에 따라 별도 다운로드·전처리 |
 | TTS wav 캐시·폰트 | 제외 | 아래 생성 명령 또는 팀 배포본 사용. 폰트는 [Galmuri Releases](https://github.com/quiple/galmuri/releases)에서 받음 |
@@ -267,8 +298,21 @@ pip install -r requirements-train.txt  # 학습·ONNX 변환도 할 경우만
 python check_env.py
 ```
 
-그 다음 [Vosk 한국어 모델 ZIP](https://alphacephei.com/vosk/models/vosk-model-small-ko-0.22.zip)을
-받아 압축을 풀고 폴더 이름을 `models/vosk-ko/`로 맞춥니다. [Galmuri v2.40.4 ZIP](https://github.com/quiple/galmuri/releases/download/v2.40.4/Galmuri-v2.40.4.zip)에서
+그 다음 기본 STT 모델을 받습니다(**STT 모델**). 파일 4개, 약 160MB입니다.
+
+```bash
+d=models/sherpa-ko-174m-chunk32; mkdir -p $d
+u=https://huggingface.co/kangkyu/icefall-asr-ko-streaming-zipformer-174m/resolve/main
+for f in encoder decoder joiner; do
+  curl -L -o $d/$f-epoch-99-avg-1-chunk-32-left-128.int8.onnx \
+       $u/$f-epoch-99-avg-1-chunk-32-left-128.int8.onnx
+done
+curl -L -o $d/tokens.txt $u/tokens.txt
+python tools/compare_stt.py --tts-cache     # vosk 와 비교 (합성음성)
+```
+
+예전 엔진을 쓰려면 [Vosk 한국어 모델 ZIP](https://alphacephei.com/vosk/models/vosk-model-small-ko-0.22.zip)을
+받아 압축을 풀고 폴더 이름을 `models/vosk-ko/`로 맞춘 뒤 `--stt vosk`로 실행합니다. [Galmuri v2.40.4 ZIP](https://github.com/quiple/galmuri/releases/download/v2.40.4/Galmuri-v2.40.4.zip)에서
 `Galmuri11.ttf`와 `LICENSE.txt`를 `assets/fonts/`에 넣은 뒤 TTS 캐시를 생성합니다.
 
 ```bash
@@ -283,14 +327,15 @@ python -m src.build_tts_cache --engine macos  # macOS
 
 ```bash
 git status --short
-git status --ignored  # .venv, models/vosk-ko, data/raw 등이 ignored로 보여야 함
+git status --ignored  # .venv, models/sherpa-ko-*, models/vosk-ko, data/raw 등이 ignored로 보여야 함
 ```
 
 ### 준비 (한 번만)
 
 ```bash
 python check_env.py                  # 환경 점검 — 전부 [OK] 여야 함
-# models/vosk-ko/  ← vosk-model-small-ko-0.22 압축 해제
+# models/sherpa-ko-174m-chunk32/  ← 기본 STT 모델 ("STT 모델" 명령)
+# models/vosk-ko/  ← --stt vosk 를 쓸 때만
 # assets/fonts/Galmuri11.ttf  ← 저해상도 한글 픽셀 폰트
 python -m src.build_tts_cache        # TTS wav 사전 생성 (인터넷 필요, 1회)
 ```
@@ -355,6 +400,37 @@ python tools/prepare_aihub3d.py data/raw/New_sample --out data/processed/aihub3d
 ```
 
 ---
+
+## 데이터 출처·라이선스
+
+**학습 데이터**
+
+> 이 프로젝트는 한국지능정보사회진흥원의 사업결과물인 AI 허브 '수어 영상' 데이터를
+> 활용했습니다(https://aihub.or.kr/aidata/7965).
+
+- AI 허브 이용정책은 결과물에 한국지능정보사회진흥원(NIA)의 사업결과임을 밝히도록 합니다.
+  학습한 모델 같은 2차적 저작물에도 같은 표기가 필요하므로 발표 자료·보고서·포스터와
+  모델 배포에 위 문구를 함께 적습니다.
+- 데이터 구축: 테스트웍스(주관), 나사렛대학교, KAIST RCV, 이큐포올, 한국농아인협회(참여).
+- 승인 없이 데이터를 제3자에게 제공·양도·판매할 수 없습니다. 원본·전처리 데이터는
+  저장소에 넣지 않습니다(`.gitignore`). 신청은 내국인만 가능합니다.
+- 데이터 변환 도구가 manifest에 출처를 적고(`--source`), 학습이 체크포인트 metadata
+  `data_sources`로, ONNX 내보내기가 사이드카로 옮깁니다. 서버 `/health`의 `data_sources`가
+  표기 문구를 돌려줍니다. 팀이 직접 녹화한 데이터는 `team`으로 기록됩니다.
+- 출처 기록 전에 변환한 데이터는 학습할 때 경고가 나옵니다. 다음 명령으로 채웁니다.
+  `python -m src.data_sources data/processed/.../manifest.json --source aihub-sign-video`
+- 다른 AI 허브 데이터셋(예: 재난 안전 수어)을 쓰면 그 데이터셋 이름으로 같은 표기를 추가합니다.
+
+**외부 모델·자원**
+
+| 자원 | 출처 | 라이선스·비고 |
+|---|---|---|
+| 기본 STT 모델 | [kangkyu/icefall-asr-ko-streaming-zipformer-174m](https://huggingface.co/kangkyu/icefall-asr-ko-streaming-zipformer-174m) | Apache-2.0 (모델 카드). KsponSpeech + AI 허브 음성으로 학습됐다고 밝힘 |
+| 비교용 STT 모델 | [k2-fsa sherpa-onnx 2024-06-16 한국어](https://k2-fsa.github.io/sherpa/onnx/pretrained_models/online-transducer/zipformer-transducer-models.html) | 페이지에 라이선스 명시 없음 — 배포 전 확인 |
+| STT 런타임 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 1.13.8 | Apache-2.0 |
+| 대체 STT | [Vosk small-ko 0.22](https://alphacephei.com/vosk/models) | Apache-2.0 |
+| 포즈 추출 | MediaPipe Holistic 0.10.21 | Apache-2.0 |
+| HUD 폰트 | [Galmuri](https://github.com/quiple/galmuri) v2.40.4 | SIL OFL 1.1 (`assets/fonts/LICENSE.txt`) |
 
 ## 알려진 제약
 

@@ -6,9 +6,10 @@ SPACE starts/ends capture; c cancels; q quits. Empty --glosses records a negativ
 import argparse
 import json
 from pathlib import Path
-import time
 import uuid
 import config as C
+from src import clock
+from src.data_sources import source_entry
 from src.pose_sequence import (VERSION, VERSION_3D, JOINT_NAMES, from_mediapipe,
                                world_from_mediapipe)
 from src.cloud_sign import SegmentRecorder
@@ -35,6 +36,9 @@ def main():
                 else {"version": version, "joint_names": JOINT_NAMES, "clips": []})
     if manifest["version"] != version:
         p.error("Existing dataset uses a different pose contract")
+    # Recorded here, so trained models can say where their data came from.
+    if not any(s.get("id") == "team" for s in manifest.setdefault("sources", [])):
+        manifest["sources"].append(source_entry("team"))
     import cv2
     from src.camera import CameraReader
     from src.landmarks import make_holistic
@@ -50,7 +54,7 @@ def main():
             ok, frame = cap.read()
             if not ok:
                 continue
-            captured = time.monotonic()
+            captured = clock.now()
             h, w = frame.shape[:2]
             res = holistic.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             points, mask = from_mediapipe(res)
@@ -90,7 +94,7 @@ def main():
                     print("Saved", filename)
                 else:
                     recorder.start()
-                    started = time.time()
+                    started = clock.unix_time()  # data: Unix capture_start
     finally:
         cap.release()
         holistic.close()

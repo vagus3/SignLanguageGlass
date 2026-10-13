@@ -20,7 +20,6 @@ Step 1-1. 수어 데이터 수집기
     - 한 번에 몰아 찍지 말고 며칠에 나눠 찍으면 일반화가 좋아집니다
 """
 import sys
-import time
 from pathlib import Path
 
 import cv2
@@ -29,6 +28,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config as C
 from src import landmarks as L
+from src import clock
 
 
 def label_dir(label):
@@ -121,7 +121,7 @@ def main():
             view = cv2.flip(view, 1)
 
         label = C.VOCAB[li]
-        now = time.time()
+        now = clock.now()
 
         # ---------------- 상태 머신 ----------------
         if state == "countdown":

@@ -8,6 +8,7 @@ from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from src.pose_sequence import (PoseSequence, VERSION, VERSION_3D, VERSIONS, FEATURE_SETS,
                                 needs_world)
+from src.ctc_runtime import check_calibration, check_contract, greedy_decode  # noqa: F401
 
 
 class CtcRecognizer(nn.Module):
@@ -30,20 +31,6 @@ class CtcRecognizer(nn.Module):
         decoded, _ = pad_packed_sequence(packed, batch_first=True,
                                          total_length=x.shape[1])
         return self.output(decoded).log_softmax(-1).transpose(0, 1)
-
-
-def greedy_decode(probabilities, labels):
-    """Collapse repeats separated by CTC blank; score is not calibrated probability."""
-    a = np.asarray(probabilities)
-    path = a.argmax(-1)
-    tokens, scores, previous = [], [], 0
-    for i, token in enumerate(path):
-        token = int(token)
-        if token != 0 and token != previous:
-            tokens.append(labels[token])
-            scores.append(float(a[i, token]))
-        previous = token
-    return tokens, min(scores) if scores else 0.0
 
 
 def edit_distance(a, b):
@@ -134,9 +121,18 @@ def split_dataset(rows, seed=0):
     return result
 
 
-def collate(rows, vocabulary, feature_set="2d"):
+def collate(rows, vocabulary, feature_set="2d", cache=None):
+    """cache: dict reused across epochs; features are deterministic per (clip, feature set)."""
     extract, dim = FEATURE_SETS[feature_set]
-    arrays = [extract(r["sequence"]) for r in rows]
+    if cache is None:
+        arrays = [extract(r["sequence"]) for r in rows]
+    else:
+        arrays = []
+        for r in rows:
+            key = (r["id"], feature_set)
+            if key not in cache:
+                cache[key] = extract(r["sequence"])
+            arrays.append(cache[key])
     lengths = torch.tensor([len(x) for x in arrays], dtype=torch.long)
     x = torch.zeros(len(rows), int(lengths.max()), dim)
     ids = {label: i for i, label in enumerate(vocabulary)}
@@ -170,26 +166,14 @@ class Recognizer:
         data = torch.load(path, map_location="cpu", weights_only=True)
         # Checkpoints older than feature sets were always 2D.
         self.feature_set = data.get("feature_set", "2d")
-        if self.feature_set not in FEATURE_SETS:
-            raise ValueError("Checkpoint pose contract mismatch")
-        expected_version = VERSION_3D if needs_world(self.feature_set) else VERSION
-        if (data["version"] != expected_version
-                or data["feature_dim"] != FEATURE_SETS[self.feature_set][1]):
-            raise ValueError("Checkpoint pose contract mismatch")
         self.labels = data["labels"]
-        if not self.labels or self.labels[0] != "<blank>" or len(set(self.labels)) != len(self.labels):
-            raise ValueError("Invalid checkpoint vocabulary")
+        check_contract(self.feature_set, data["version"], data["feature_dim"], self.labels)
         self.model = CtcRecognizer(len(self.labels), data["hidden"], self.feature_set)
         self.model.load_state_dict(data["state_dict"])
         self.model.eval()
         self.calibration = data.get("calibration") or {}
         self.metadata = data.get("metadata", {})
-        if self.calibration.get("enabled"):
-            threshold = self.calibration.get("threshold")
-            if (not isinstance(threshold, (int, float)) or not np.isfinite(threshold)
-                    or not 0 <= threshold <= 1 or self.calibration.get("negative_seconds", 0) < 600
-                    or not self.calibration.get("reviewer")):
-                raise ValueError("Invalid automatic speech calibration")
+        check_calibration(self.calibration)
 
     def predict(self, sequence):
         sequence.validate()

@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config as C
+from src import clock
 
 
 def open_camera(verbose=True, camera_index=None):
@@ -93,7 +94,7 @@ class CameraReader:
             # 카메라가 없는 상태. 여기서 그냥 돌아가면 호출부가 continue 로
             # 되돌아와 코어 하나를 100% 태웁니다. 쉬면서 주기적으로만 재시도합니다.
             time.sleep(0.05)
-            if time.time() >= self._next_open:
+            if clock.now() >= self._next_open:
                 self._reopen()
             return False, None
 
@@ -112,7 +113,7 @@ class CameraReader:
         return False, None
 
     def _reopen(self):
-        self._next_open = time.time() + self.reopen_sec
+        self._next_open = clock.now() + self.reopen_sec
         self.cap = self._open(verbose=False)
         if self.cap is not None:
             print("[camera] 재연결 성공")

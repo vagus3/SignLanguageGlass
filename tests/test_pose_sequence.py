@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from src.pose_sequence import (PoseSequence, features, from_openpose, from_mediapipe,
                                 FEATURE_DIM, VERSION)
-from src.features_v2 import MP_POSE, OP_POSE, BODY_NAMES
+from src.joints import MP_POSE, OP_POSE, BODY_NAMES
 
 rng = np.random.default_rng(8)
 hands = [rng.uniform(.1, .8, (21, 2)) for _ in range(2)]

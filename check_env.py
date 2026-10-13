@@ -157,11 +157,19 @@ def check_audio_libs():
         fail(f"sounddevice 사용 불가: {e}", "리눅스면 'sudo apt install libportaudio2' 필요")
 
     try:
+        import sherpa_onnx  # noqa: F401
+
+        ok(f"sherpa-onnx {sherpa_onnx.__version__} (기본 STT)")
+    except ImportError:
+        (fail if C.STT_BACKEND == "sherpa" else warn)(
+            "sherpa-onnx 없음 (기본 STT)", "pip install -r requirements.txt, 또는 --stt vosk")
+
+    try:
         import vosk  # noqa: F401
 
-        ok("vosk")
+        ok("vosk (대체 STT)")
     except ImportError:
-        warn("vosk 없음 (실시간 한국어 STT)")
+        (fail if C.STT_BACKEND == "vosk" else warn)("vosk 없음 (대체 STT)")
 
     try:
         import webrtcvad  # noqa: F401
@@ -205,12 +213,12 @@ def check_camera():
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    n, t0 = 0, time.time()
+    n, t0 = 0, time.perf_counter()
     for _ in range(40):
         r, _f = cap.read()
         if r:
             n += 1
-    fps = n / max(time.time() - t0, 1e-6)
+    fps = n / max(time.perf_counter() - t0, 1e-6)
     cap.release()
 
     if n == 0:
@@ -239,10 +247,10 @@ def check_holistic_speed():
         img = np.random.randint(0, 255, (C.CAM_H, C.CAM_W, 3), dtype=np.uint8)
         with mp.solutions.holistic.Holistic(model_complexity=C.MODEL_COMPLEXITY) as h:
             h.process(img)  # 워밍업
-            t0 = time.time()
+            t0 = time.perf_counter()
             for _ in range(10):
                 h.process(img)
-            ms = (time.time() - t0) / 10 * 1000
+            ms = (time.perf_counter() - t0) / 10 * 1000
 
         if ms < 40:
             ok(f"프레임당 {ms:.0f}ms (약 {1000/ms:.0f} fps) — 실시간 가능")
@@ -338,11 +346,20 @@ def check_artifacts():
     else:
         fail(f"라벨 파일 없음: {C.LABELS_PATH}", "src.train 실행 시 함께 생성됩니다")
 
+    try:
+        from src.stt_worker import transducer_files
+        files = transducer_files(C.SHERPA_MODEL)
+        ok(f"sherpa 한국어 모델: {C.SHERPA_MODEL.name} ({files['encoder'].name})")
+    except (OSError, ValueError) as e:
+        (fail if C.STT_BACKEND == "sherpa" else warn)(
+            f"sherpa 한국어 모델 문제: {e}", "README 'STT 모델' 절의 다운로드 명령을 실행하세요")
+
     if C.VOSK_MODEL.exists() and any(C.VOSK_MODEL.iterdir()):
         ok(f"Vosk 한국어 모델: {C.VOSK_MODEL.name}")
     else:
-        fail(f"Vosk 한국어 모델 없음: {C.VOSK_MODEL}",
-             "vosk-model-small-ko-0.22를 내려받아 이 경로에 압축 해제하세요")
+        (fail if C.STT_BACKEND == "vosk" else warn)(
+            f"Vosk 한국어 모델 없음: {C.VOSK_MODEL}",
+            "vosk-model-small-ko-0.22를 내려받아 이 경로에 압축 해제하세요")
 
     wavs = list(C.TTS_CACHE.glob("*.wav")) if C.TTS_CACHE.exists() else []
     if wavs:

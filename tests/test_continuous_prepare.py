@@ -32,6 +32,7 @@ with tempfile.TemporaryDirectory() as td:
     annotation.write_text(json.dumps(source))
     report=prepare(annotation,root/"out")
     assert len(report["excluded_from_ctc"])==1
+    assert [x["id"] for x in report["sources"]]==["aihub-sign-video"], "source recorded"
     s=PoseSequence.load(root/"out/clip_000000.npz")
     assert np.allclose(s.timestamps,[0,1/30,3/30]) and len(s.timestamps)==3
     rows,skipped=load_dataset(root/"out/manifest.json")

@@ -11,7 +11,7 @@ import numpy as np
 from src.pose_sequence import PoseSequence
 from src.continuous_sign import (CtcRecognizer, collate, greedy_decode, split_dataset,
                                  save_checkpoint, Recognizer)
-from src.train_continuous import fit
+from src.train_continuous import feature_cache, fit
 from tools.evaluate_continuous import choose_threshold, negative_duration, summarize
 
 torch.set_num_threads(1)
@@ -30,6 +30,14 @@ model = CtcRecognizer(3,hidden=16)
 before = next(model.parameters()).detach().clone()
 fit(model,rows,labels,epochs=1,batch=2)
 assert not torch.equal(before,next(model.parameters()).detach())
+# The feature cache changes cost, not results: identical loss history from the same seed.
+histories=[]
+for cache in (None,{}):
+    torch.manual_seed(1)
+    histories.append(fit(CtcRecognizer(3,hidden=16),rows,labels,epochs=3,batch=2,cache=cache))
+assert histories[0]==histories[1] and len(cache)==len(rows)
+assert set(cache)=={(r["id"],"2d") for r in rows}
+assert feature_cache(rows,"2d")=={} and feature_cache(rows,"2d",limit=1) is None
 model.eval()
 with torch.inference_mode():
     x,lengths,_,_ = collate(rows,labels)

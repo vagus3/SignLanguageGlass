@@ -38,25 +38,15 @@ hand_shape3d.py 및 tools/prepare_aihub3d.py를 사용하세요.
     플래그                  = 3   (왼손/오른손/몸 유효)
     합계                    = 101
 """
+import sys
+from pathlib import Path
 import numpy as np
 
-# ---- 손: 두 형식이 동일한 21점 --------------------------------------
-N_HAND = 21
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # 자가 검증 단독 실행용
+# 관절 정의는 src/joints.py 가 단일 출처입니다. 예전 import 경로를 위해 다시 내보냅니다.
+from src.joints import BODY_NAMES, MP_POSE, N_HAND, OP_POSE, person_from_frame  # noqa: F401
+
 WRIST, MIDDLE_MCP = 0, 9
-
-# ---- 상체 공통 7점의 의미 순서 --------------------------------------
-BODY_NAMES = ["neck", "r_shoulder", "l_shoulder",
-              "r_elbow", "l_elbow", "r_wrist", "l_wrist"]
-
-# MediaPipe Pose(33) 인덱스
-MP_POSE = {"r_shoulder": 12, "l_shoulder": 11,
-           "r_elbow": 14, "l_elbow": 13,
-           "r_wrist": 16, "l_wrist": 15}       # neck 은 어깨 중점으로 유도
-
-# OpenPose BODY_25 인덱스
-OP_POSE = {"neck": 1, "r_shoulder": 2, "l_shoulder": 5,
-           "r_elbow": 3, "l_elbow": 6,
-           "r_wrist": 4, "l_wrist": 7}
 
 DIM_HAND = N_HAND * 2 * 2       # 84
 DIM_BODY = len(BODY_NAMES) * 2  # 14
@@ -183,20 +173,6 @@ def from_openpose(person, conf_min=0.2):
             body = sel[:, :2]
             valid = bool(min(sel[1, 2], sel[2, 2]) > conf_min)   # 양 어깨 신뢰도
     return assemble(lh, rh, body, valid)
-
-
-def person_from_frame(node):
-    """키포인트 JSON 한 프레임에서 person dict 를 꺼냅니다(구조 편차 흡수)."""
-    if isinstance(node, dict):
-        if "people" in node:
-            ppl = node["people"]
-            if isinstance(ppl, list) and ppl:
-                return ppl[0]
-            if isinstance(ppl, dict):
-                return ppl
-        if any(k.endswith("_keypoints_2d") for k in node):
-            return node
-    return None
 
 
 # ================================================ 시퀀스 리샘플

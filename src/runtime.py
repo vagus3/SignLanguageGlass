@@ -101,14 +101,12 @@ class SignRuntime:
         import torch
         try:
             self._model = torch.jit.load(str(self.path), map_location="cpu").eval()
-        except Exception:
-            obj = torch.load(str(self.path), map_location="cpu",
-                             weights_only=False)
-            if not hasattr(obj, "eval"):
-                raise RuntimeError(
-                    "state_dict 만 있는 파일은 직접 로드할 수 없습니다.\n"
-                    "  tools/to_onnx.py 로 ONNX 변환 후 쓰세요.")
-            self._model = obj.eval()
+        except Exception as error:
+            # 피클로 저장한 모듈 전체를 열려면 weights_only=False 가 필요하고, 그건
+            # 파일 안의 임의 코드를 실행합니다. 실행 경로에서는 TorchScript 만 엽니다.
+            raise RuntimeError(
+                f"{self.path.name} 은 TorchScript 가 아닙니다. 실행 경로는 피클 모듈을 "
+                "열지 않습니다.\n  tools/to_onnx.py 로 ONNX 변환 후 쓰세요.") from error
         torch.set_num_threads(2)
         self.backend = "torch"
         print("[runtime] torch (개발용 임시 경로). 시연 전 ONNX 변환 권장.")

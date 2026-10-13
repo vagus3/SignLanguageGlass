@@ -24,6 +24,11 @@ models/*
 assets/tts_cache/*
 !assets/tts_cache/.gitkeep
 
+# 측정·검수 결과. 검수표에는 검수자 이름이, 녹음 정답 파일에는 대화 내용이 들어갑니다.
+# 예전부터 공유하던 자산 점검 결과(assets.json)만 저장소에 둡니다.
+reports/*
+!reports/assets.json
+
 # 폰트는 라이선스가 제각각이라 각자 내려받게 합니다.
 assets/fonts/*
 !assets/fonts/.gitkeep

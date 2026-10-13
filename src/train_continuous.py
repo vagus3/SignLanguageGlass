@@ -6,10 +6,24 @@ import numpy as np
 import torch
 from src.continuous_sign import (CtcRecognizer, collate, load_dataset,
                                   split_dataset, save_checkpoint, greedy_decode, edit_distance)
+from src.data_sources import attribution, manifest_sources
 from src.pose_sequence import FEATURE_SETS, VERSION_3D, needs_world
 
+# Features are computed once per clip and reused every epoch while they fit here.
+FEATURE_CACHE_BYTES = 2 * 1024 ** 3
 
-def fit(model, rows, labels, *, epochs=30, batch=8, seed=0, device="cpu"):
+
+def feature_cache(rows, feature_set, limit=FEATURE_CACHE_BYTES):
+    """An empty cache dict, or None when caching every clip would exceed the limit."""
+    frames = sum(len(r["sequence"].timestamps) for r in rows)
+    needed = frames * FEATURE_SETS[feature_set][1] * 4
+    if needed > limit:
+        print(f"feature cache off: {needed / 1024 ** 3:.1f} GiB > {limit / 1024 ** 3:.1f} GiB")
+        return None
+    return {}
+
+
+def fit(model, rows, labels, *, epochs=30, batch=8, seed=0, device="cpu", cache=None):
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     model.to(device).train()
@@ -21,7 +35,8 @@ def fit(model, rows, labels, *, epochs=30, batch=8, seed=0, device="cpu"):
         order = rng.permutation(len(rows))
         for start in range(0, len(rows), batch):
             items = [rows[i] for i in order[start:start+batch]]
-            x, lengths, targets, target_lengths = collate(items, labels, model.feature_set)
+            x, lengths, targets, target_lengths = collate(items, labels, model.feature_set,
+                                                          cache)
             optimizer.zero_grad()
             output = model(x.to(device), lengths)
             loss = criterion(output, targets.to(device), lengths, target_lengths)
@@ -36,12 +51,12 @@ def fit(model, rows, labels, *, epochs=30, batch=8, seed=0, device="cpu"):
     return history
 
 
-def evaluate(model, rows, labels, device="cpu"):
+def evaluate(model, rows, labels, device="cpu", cache=None):
     model.eval()
     errors, words, results = 0, 0, []
     with torch.inference_mode():
         for row in rows:
-            x, lengths, _, _ = collate([row], labels, model.feature_set)
+            x, lengths, _, _ = collate([row], labels, model.feature_set, cache)
             p = model(x.to(device), lengths)[:, 0].exp().cpu().numpy()
             prediction, score = greedy_decode(p, labels)
             errors += edit_distance(row["glosses"], prediction)
@@ -50,6 +65,16 @@ def evaluate(model, rows, labels, device="cpu"):
                             "prediction": prediction, "score": score})
     return {"wer": errors / words if words else None, "errors": errors,
             "reference_words": words, "clips": results}
+
+
+def dataset_sources(manifest, warn=True):
+    """Data sources of a manifest, for the checkpoint (AI Hub: attribution on derived works)."""
+    sources = manifest_sources(json.loads(Path(manifest).read_text(encoding="utf-8")))
+    if not sources and warn:
+        print(f"[경고] {manifest} 에 데이터 출처(sources)가 없습니다. 이 데이터로 학습한 모델에는 "
+              "출처 표기가 빠집니다. AI 허브 데이터라면 먼저 실행하세요:\n"
+              f"  python -m src.data_sources {manifest} --source aihub-sign-video")
+    return sources
 
 
 def prepare_training(manifest, seed=0, feature_sets=("2d",)):
@@ -73,11 +98,11 @@ def prepare_training(manifest, seed=0, feature_sets=("2d",)):
 
 
 def train_one(splits, labels, feature_set, out, *, epochs=30, batch=8, seed=0, device="cpu",
-              skipped=()):
+              skipped=(), data_sources=()):
     torch.manual_seed(seed)
     model = CtcRecognizer(len(labels), feature_set=feature_set)
-    history = fit(model, splits["train"], labels, epochs=epochs,
-                  batch=batch, seed=seed, device=device)
+    history = fit(model, splits["train"], labels, epochs=epochs, batch=batch, seed=seed,
+                  device=device, cache=feature_cache(splits["train"], feature_set))
     validation = evaluate(model, splits["val"], labels, device)
     report = {"feature_set": feature_set, "validation": validation, "skipped": list(skipped),
               "history": history,
@@ -87,7 +112,7 @@ def train_one(splits, labels, feature_set, out, *, epochs=30, batch=8, seed=0, d
     out.mkdir(parents=True)
     save_checkpoint(out / "ctc.pt", model.cpu(), labels,
                     metadata={"splits": report["splits"], "split_seed": seed,
-                              "continuous": True})
+                              "continuous": True, "data_sources": list(data_sources)})
     (out / "training.json").write_text(json.dumps(report, ensure_ascii=False, indent=2),
                                       encoding="utf-8")
     return report
@@ -113,8 +138,11 @@ def main():
         skipped, splits, labels = prepare_training(args.manifest, args.seed, [args.features])
     except ValueError as error:
         p.error(str(error))
+    sources = dataset_sources(args.manifest)
     train_one(splits, labels, args.features, out, epochs=args.epochs, batch=args.batch,
-              seed=args.seed, device=args.device, skipped=skipped)
+              seed=args.seed, device=args.device, skipped=skipped, data_sources=sources)
+    for line in attribution(sources):
+        print("데이터 출처:", line)
     print(f"Saved {out}/ctc.pt; automatic speech remains disabled until calibration")
 
 

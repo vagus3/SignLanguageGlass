@@ -9,14 +9,15 @@
     tts.say("얼마예요?")
 """
 import sys
-import time
 import queue
 import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config as C
-from src.build_tts_cache import cache_path
+from src import clock
+from src.build_tts_cache import (cache_key, legacy_aliases, legacy_cache_path,
+                                  normalize_tts_text)
 
 
 class TtsPlayer(threading.Thread):
@@ -33,6 +34,7 @@ class TtsPlayer(threading.Thread):
         # join() 이 'Event object is not callable' 로 죽습니다.
         self._quit = threading.Event()
         self._cache = {}          # {stem: (samples, samplerate)}
+        self._aliases = {}        # {정규화한 문장: 기존 v1 파일 stem}
         self._fallback = None
         if gate is None:
             from src.audio_gate import NullGate
@@ -60,6 +62,7 @@ class TtsPlayer(threading.Thread):
                 self._cache[f.stem] = (data, int(sr))
             except Exception as e:
                 print(f"[tts] {f.name} 읽기 실패: {e}")
+        self._aliases = legacy_aliases(set(self._cache))
         if self._cache:
             print(f"[tts] 캐시 {len(self._cache)}개 로드")
         else:
@@ -68,13 +71,13 @@ class TtsPlayer(threading.Thread):
 
     def say(self, text, origin_t=0.0):
         """
-        origin_t : 이 발화를 촉발한 수어 단어가 확정된 시각(선택).
+        origin_t : 이 발화를 촉발한 수어 단어가 확정된 시각(선택, clock.now() 기준).
                    주면 '수어 확정 -> 실제 소리 출력' 전체 지연을 실측합니다.
 
         큐에 넣은 시각도 같이 싣습니다. 소리가 나기 시작할 때까지의 시간
         (큐 대기 + 오디오 장치 열기)이 Phase 1 지연의 마지막 조각입니다.
         """
-        self.q.put((text, time.time(), origin_t))
+        self.q.put((text, clock.now(), origin_t))
 
     def stop(self):
         self._quit.set()
@@ -107,7 +110,7 @@ class TtsPlayer(threading.Thread):
         # 스피커와 마이크가 안경테 위 몇 cm 거리라 이게 없으면
         # 자기가 한 말이 상대방 자막으로 다시 떠오릅니다.
         with self.gate.output():
-            hit = self._cache.get(cache_path(text).stem)
+            hit = self._lookup(text)
             if hit is not None:
                 data, sr = hit
                 try:
@@ -119,6 +122,14 @@ class TtsPlayer(threading.Thread):
                     print(f"[tts] 재생 실패: {e}")
             self._mark(t_say, origin_t)
             self._speak_fallback(text)
+
+    def _lookup(self, text):
+        """v2 키 -> 정규화가 같은 기존 v1 파일 -> v1 원문 일치 순서로 찾습니다."""
+        for stem in (cache_key(text), self._aliases.get(normalize_tts_text(text)),
+                     legacy_cache_path(text).stem):
+            if stem is not None and stem in self._cache:
+                return self._cache[stem]
+        return None
 
     def _mark(self, t_say, origin_t):
         """소리가 나기 직전에 지연을 찍습니다."""

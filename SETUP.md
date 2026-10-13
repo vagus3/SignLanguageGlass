@@ -92,7 +92,13 @@ Holistic 이 40ms를 넘으면 카메라 해상도를 640x480 으로,
 
 ## 4. 무료 리소스 내려받기
 
-### 4-1. Vosk 한국어 STT 모델 (82MB, Apache 2.0)
+### 4-0. 기본 STT 모델: sherpa-onnx 스트리밍 Zipformer 한국어 (약 160MB, Apache-2.0)
+
+README "STT 모델" 절의 명령으로 `models/sherpa-ko-174m-chunk32/`에 받습니다.
+합성음성 22문장 CER 13.0%(vosk 58.0%)였고, 실제 목소리 비교는 TEST_CHECKLIST 2번입니다.
+아래 vosk는 `--stt vosk`로 쓰는 대체 엔진입니다.
+
+### 4-1. (대체) Vosk 한국어 STT 모델 (82MB, Apache 2.0)
 ```
 https://alphacephei.com/vosk/models/vosk-model-small-ko-0.22.zip
 ```
@@ -123,7 +129,8 @@ signglass/
 ├── check_env.py
 ├── requirements.txt
 ├── models/
-│   ├── vosk-ko/                # 4-1 에서 받은 STT 모델
+│   ├── sherpa-ko-174m-chunk32/ # 4-0 기본 STT 모델
+│   ├── vosk-ko/                # 4-1 대체 STT 모델 (--stt vosk)
 │   ├── sign_lstm.pt            # TorchScript 백업
 │   ├── sign_lstm.onnx          # 실제 실행 모델
 │   └── labels.json
@@ -143,7 +150,7 @@ signglass/
     ├── collect.py              # Step 1-1 데이터 수집기
     ├── train.py                # Step 1-2 LSTM 학습
     ├── predictor.py            # 슬라이딩 추론 + 확정 + 문장화
-    ├── stt_worker.py           # vosk 스트리밍 스레드
+    ├── stt_worker.py           # 스트리밍 STT 스레드 (sherpa-onnx 기본, vosk 대체)
     ├── build_tts_cache.py      # TTS wav 사전 생성 (1회)
     ├── tts_player.py           # 비동기 재생
     ├── hud.py                  # 좌표변환 + 말풍선 + SSD1306 패킹

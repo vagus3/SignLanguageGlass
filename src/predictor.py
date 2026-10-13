@@ -20,7 +20,6 @@
 """
 import sys
 import json
-import time
 from pathlib import Path
 from collections import deque
 
@@ -28,6 +27,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config as C
+from src import clock
 from src.landmarks import FEATURE_DIM, FEATURE_VERSION, N_FLAGS
 
 
@@ -122,11 +122,11 @@ class SignPredictor:
         프레임 특징 1개 투입.
         확정된 단어가 나오면 문자열, 아니면 None 반환.
 
-        t : 그 프레임을 캡처한 시각(초). 생략하면 현재 시각.
+        t : 그 프레임을 캡처한 시각(초, clock.now() 기준). 생략하면 현재 시각.
             시간 기반 창과 지연 측정이 이 값을 씁니다. 추론이 끝난 뒤가 아니라
             '캡처한 순간'을 넘겨야 지연 숫자가 정직해집니다.
         """
-        now = time.time() if t is None else float(t)
+        now = clock.now() if t is None else float(t)
         self.buf.append((now, feature))
 
         seq = self._window(now)
@@ -205,7 +205,7 @@ class SignPredictor:
             self._last_word = None       # 무동작이 지나가면 다음 같은 단어를 허용
             return None
 
-        now = time.time()
+        now = clock.now()
         if word == self._last_word and (now - self._last_t) < C.COOLDOWN_SEC:
             return None
         self._last_word, self._last_t = word, now
@@ -267,7 +267,7 @@ class PhraseBuilder:
 
     def feed(self, word):
         """규칙이 완성되면 문장을, 아니면 None(대기)을 반환."""
-        now = time.time()
+        now = clock.now()
         self.pending = [(w, t) for w, t in self.pending
                         if now - t < self.window_sec]
         self.pending.append((word, now))
@@ -290,7 +290,7 @@ class PhraseBuilder:
             return None
         seq = tuple(w for w, _ in self.pending)
         wait = self.window_sec if self._may_extend(seq) else self.flush_sec
-        if time.time() - self.pending[-1][1] < wait:
+        if clock.now() - self.pending[-1][1] < wait:
             return None
         text = " ".join(seq)
         self.pending.clear()

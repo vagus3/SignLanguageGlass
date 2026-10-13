@@ -16,6 +16,9 @@ FONT_DIR = ASSET_DIR / "fonts"
 MODEL_PATH = MODEL_DIR / "sign_lstm.onnx"   # 실행은 항상 ONNX. 변환: tools/to_onnx.py
 LABELS_PATH = MODEL_DIR / "labels.json"
 VOSK_MODEL = MODEL_DIR / "vosk-ko"
+# sherpa-onnx 스트리밍 Zipformer 한국어 (encoder/decoder/joiner + tokens.txt).
+# kangkyu/icefall-asr-ko-streaming-zipformer-174m 의 chunk-32 int8 (README "STT 모델")
+SHERPA_MODEL = MODEL_DIR / "sherpa-ko-174m-chunk32"
 CALIB_PATH = MODEL_DIR / "hud_calib.json"
 
 # 촬영자 ID. 데이터 파일명에 기록되어 '화자 단위 평가'에 쓰입니다.
@@ -133,6 +136,7 @@ AUDIO_RATE = 16000
 AUDIO_BLOCK = 4000      # vosk 권장 블록
 VAD_AGGRESSIVENESS = 2  # 0(관대) ~ 3(엄격)
 STT_ENDPOINT_MS = 600   # 이만큼 무음이 이어지면 발화 종료로 보고 확정
+STT_BACKEND = "sherpa"   # "sherpa" | "vosk". tools/compare_stt.py 로 같은 녹음 비교
 TTS_VOICE = "ko-KR-SunHiNeural"   # edge-tts 캐시 생성용
 
 # 반이중(half-duplex) 게이트
@@ -152,6 +156,8 @@ HUD_FONT_SIZE = 11
 HUD_MAX_CHARS_PER_LINE = 24
 HUD_MAX_LINES = 3
 HUD_HOLD_SEC = 4.0           # 자막 유지 시간
+HUD_OWN_HOLD_SEC = 4.0       # 내 번역 결과 유지 시간 (페이지가 많으면 그만큼 늘림)
+HUD_PAGE_SEC = 2.0           # 긴 내 번역 결과의 페이지 전환 간격
 
 # 카메라 시야(110도) 중 디스플레이가 실제로 덮는 영역의 비율.
 # 얼굴이 이 영역 밖이면 말풍선 대신 방향 화살표를 띄웁니다.

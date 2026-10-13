@@ -19,7 +19,8 @@ import tempfile
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.features_v2 import person_from_frame
+from src.data_sources import source_entry
+from src.joints import person_from_frame
 from src.hand_shape3d import (FEATURE_DIM, FEATURE_VERSION, from_raw_hands,
                              raw_openpose_hands, resample_descriptors)
 
@@ -143,6 +144,7 @@ def _prepare(root, out):
         'groups_per_label': counts,
         'can_make_disjoint_train_test_with_all_classes': min(counts.values()) >= 2,
         'deployment_ready': False,
+        'sources': [source_entry('aihub-sign-video')],
         'limitations': [
             'WORD IDs have not been mapped to Korean vocabulary.',
             'Confidence flags are annotations, not measured live detection accuracy.',

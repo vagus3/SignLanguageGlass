@@ -156,6 +156,48 @@ python tools/compare_features.py data/processed/continuous3d/manifest.json \
 `evaluate_continuous.py`로 test를 한 번만 평가합니다. 데이터가 적으면 seed를 바꿔
 반복하고, 차이가 일관된 경우에만 결론을 냅니다.
 
+### 장치 내 인식 비교용 ONNX (REVIEW_AND_PLAN P1-1)
+
+~~~bash
+python tools/export_ctc_onnx.py models/continuous/ctc.pt --out models/continuous/ctc.onnx
+~~~
+
+패딩 없는 한 구간(1, 프레임, 특징)을 길이 제한 없이 받는 ONNX와 사이드카 JSON(라벨·특징
+구성·좌표 규격·보정·메타데이터)을 만듭니다. 2·37·150·900프레임에서 PyTorch와
+log-확률(허용 1e-4)과 탐욕 디코딩이 같을 때만 저장합니다. 장치에서는 torch 없이
+`src/ctc_runtime.OnnxRecognizer`로 같은 판단을 합니다. 배치 결정(서버 인식 A / 장치 인식 B)은
+목표 장치에서 카메라·STT·TTS를 함께 돌린 부하·발열·전체 지연을 재고 정합니다.
+
+### 장치 인식 경로 B와 배치 비교
+
+~~~bash
+# 서버: 같은 내보내기의 체크포인트(A)와 사이드카(B)를 함께 지정
+python -m src.sign_server --host 0.0.0.0 --checkpoint models/continuous/ctc.pt \
+  --device-model models/continuous/ctc.json --mapping glossary.json
+# 장치(B): 이 기기에서 ONNX로 인식하고 글로스만 보냄 (기본은 A: --recognize server)
+python main.py --sign-backend cloud --auto-segment --recognize device \
+  --onnx models/continuous/ctc.onnx
+# 배치 비교: 시연 노트북에서 실제 서버를 대상으로
+python tools/benchmark_paths.py data/processed/aihub_sample_extractors/mediapipe/manifest.json \
+  --onnx models/continuous/ctc.onnx --url "$SIGN_SERVER_URL" --out reports/ab.json
+~~~
+
+`POST /v1/sign/compose` 입력은 version(`gloss-sequence-v1`), session_id, segment_id,
+glosses(최대 64개), score(0~1), recognizer(사이드카의 model_id)입니다. 서버는 model_id가
+`--device-model`과 다르면 409, 그 모델 라벨에 없는 글로스면 422로 거절합니다. 그 뒤 임계값·
+용어집·문장 생성·발화 게이트를 A와 같은 코드로 적용하고, 캐시·중복 판정·동시 요청 제한도
+같습니다. 응답 형식은 `/v1/sign/translate`와 같습니다.
+
+`--mock` 서버는 B 요청 중 model_id가 `mock`인 것만 받습니다. 실제 ONNX로 B를 시험하려면
+같은 내보내기로 `--device-model ... --mock-language` 서버를 띄웁니다. 실패하면 장치 터미널에
+`[cloud] 요청 실패: HTTP 409`처럼 이유가 나옵니다. 401은 토큰, 409는 다른 모델, 422는 형식,
+429는 처리 중입니다.
+
+`--mock-language`는 실제 인식기에 모의 문장 생성기를 붙입니다. 결과는 mock으로 표시되어
+발화되지 않으며, 학습 전에도 무작위 초기화 모델로 배치 지연을 잴 수 있습니다(가중치는
+지연과 무관). 측정 도구는 같은 클립·서버·모델로 두 경로의 준비 시간, 전송 바이트, 왕복,
+서버 시간, CPU 시간, 최고 메모리와 두 경로의 글로스 일치 수를 기록합니다.
+
 ## 3. 실제 vLLM과 서버
 
 GPU Linux 환경에 별도 가상환경을 만들고 설치합니다. vLLM을 장치 또는 CTC의
@@ -174,6 +216,39 @@ Apple Silicon 로컬 검사는 API·좌표 처리 검증이며 GPU 모델 실행
 ~~~json
 {"NAME": "이름", "WHAT": "무엇"}
 ~~~
+
+검수 문장과 의미 검사를 쓰려면 같은 `--mapping` 자리에 glossary.json을 줍니다.
+
+~~~json
+{
+  "glosses": {
+    "NAME": {"ko": "이름"},
+    "WHAT": {"ko": "무엇"},
+    "HOSPITAL": {"ko": "병원", "kind": "place", "aihub": ["WORD0000"]},
+    "NOT": {"ko": "아니다", "kind": "negation"}
+  },
+  "sentences": [
+    {"glosses": ["NAME", "WHAT"], "text": "이름이 뭐예요?",
+     "reviewed_by": "검수자", "reviewed_on": "2026-10-12"}
+  ]
+}
+~~~
+
+문장은 `src/translation.py`의 순서로 만듭니다.
+
+1. 뜻이 없는 글로스가 있거나 인식 점수가 임계값보다 낮으면 `uncertain`(재입력 안내).
+2. 글로스열이 검수 문장과 정확히 같으면 그 문장을 쓰고 언어 모델을 부르지 않습니다.
+3. 그 밖에는 언어 모델 문장에 보조 검사를 적용합니다. 입력 숫자가 그대로인지,
+   `negation` 글로스가 있으면 부정 표현이 남았는지, `person`·`place`·`number` 글로스의
+   뜻이 문장에 들어 있는지 봅니다. 활용·동의어·부정 범위는 판단하지 못하므로
+   사람 의미 검수를 대신하지 않습니다.
+4. 생성이 실패하거나 검사에 걸리면 `fallback`입니다. 검수 문장들로 글로스 전체가
+   차례대로 덮이면 그 문장들(`source: reviewed_rules`)을, 아니면 단어 나열
+   (`source: words`)을 미리보기로만 표시하며 자동 발화하지 않습니다.
+
+검수 문장도 인식 보정 게이트를 면제받지 않습니다. 보정의 `mapping_hash`는 glossary의
+뜻·종류·검수 문장에서 계산하므로(`Glossary.policy_hash`), 문장을 고치면 보정을 다시 합니다.
+검수 문장과 종류가 없는 mapping.json은 예전과 같은 해시라 기존 보정이 그대로 유효합니다.
 
 ~~~bash
 export VLLM_BASE_URL=http://127.0.0.1:8000/v1
@@ -198,6 +273,24 @@ export SIGN_SERVER_TOKEN=YOUR_SIGN_API_TOKEN
 
 장치 클라이언트는 원격 HTTP를 거부하며 localhost HTTP만 개발용으로 허용합니다.
 토큰과 .env 파일을 Git에 추가하지 않습니다.
+
+요청 본문은 간결 JSON입니다. 좌표는 서버가 읽는 float32로 정확히 되돌아가는 가장 짧은
+소수로 씁니다(`0.41240000724792480` 대신 `0.4124`, 손실 없음). 그 위에 gzip(레벨 1,
+`Content-Encoding: gzip`)을 적용합니다. AI Hub 샘플 100개(평균 139프레임, 2D)에서 본문은
+평균 262KB → 163KB, gzip 후 106KB → 56KB입니다. 1KB 미만 본문(글로스 요청)은 압축하지
+않습니다. 서버는 압축 전과 해제 후 각각 8MB로 제한하고, 손상된 gzip은 400, 지원하지 않는
+인코딩은 415로 거절하며, 압축하지 않은 JSON도 계속 받습니다. gzip을 지원하지 않는 이전
+서버에는 `SIGN_SERVER_GZIP=0`으로 일반 JSON을 보냅니다.
+
+좌표 반올림(`SIGN_SERVER_ROUND="4"` 또는 2D·3D를 따로 `"4,3"`)은 손실이 있어 기본으로
+꺼져 있습니다. 같은 샘플에서 소수 4자리는 gzip 30KB, 3자리는 18KB까지 줄지만 손이 작게
+잡힌 프레임에서는 손바닥 길이로 정규화한 손 모양 특징이 최대 1.0(3자리는 10)까지
+바뀝니다. 학습한 모델로 아래 도구를 돌려 글로스·임계값 판정이 바뀌지 않는 설정만 켭니다.
+
+~~~bash
+python tools/evaluate_rounding.py data/processed/continuous/manifest.json \
+  --checkpoint models/continuous/ctc.pt --out reports/rounding.json
+~~~
 
 ### 자동 문장 구간 (--auto-segment)
 
@@ -276,17 +369,23 @@ TTS 지연의 끝점은 재생 호출 직전이므로 실제 음향 출력 시�
 
 ## API와 검사
 
-GET /health는 규격, 모의 여부, 인식 모델 준비 여부, 언어 모델 구성 여부,
-발화 활성 여부를 반환합니다. 실제 vLLM 가용성은 번역 요청으로 확인합니다.
+GET /health는 규격, 모의 여부, 인식 모델·장치 모델(B) 준비 여부, 언어 모델 구성 여부,
+경로별 발화 활성 여부와 `data_sources`(학습 데이터 출처 표기 문구)를 반환합니다. 실제 vLLM
+가용성은 번역 요청으로 확인합니다. `POST /v1/sign/compose`는 위 "장치 인식 경로 B" 절을 봅니다.
+검증 오류(422)는 위치·종류·메시지만 최대 10개 돌려주며 입력값을 되돌려 보내지 않습니다.
 
 POST /v1/sign/translate 입력은 version, session_id, segment_id,
 timestamps(T), coordinates(T,49,2), mask(T,49 boolean), image_size([width,height])입니다.
-응답은 같은 ID, status(ok/no_sign/uncertain/unavailable), glosses, text,
-auto_speech, mock, model_version, timings_ms를 포함합니다. 오류 상태의 text는 비어 있습니다.
-발화는 ok + auto_speech=true + mock=false에만 허용합니다. 본문은 최대 4MiB, 프레임은 900개입니다.
+응답은 같은 ID, status(ok/fallback/no_sign/uncertain/unavailable), glosses, text, source,
+issues, auto_speech, mock, model_version, timings_ms를 포함합니다. no_sign·uncertain·unavailable의
+text는 비어 있고, fallback의 text는 미리보기 전용입니다.
+발화는 ok + auto_speech=true + mock=false에만 허용합니다. 본문은 받은 바이트와 gzip 해제 후
+각각 최대 8MiB, 프레임은 900개입니다. 형식이 틀린 JSON·NaN·정수 마스크는 422입니다.
 
 장치는 미완료 요청 한 개를 유지하고, 총 30초 내에서 연결 오류를 같은 ID로 한 번 재시도합니다.
-서버는 성공 결과를 5분간 캐시하며 같은 ID의 다른 입력은 거부합니다.
+서버는 성공 결과를 5분간 캐시하며 같은 ID의 다른 입력은 409로 거부합니다. 같은 입력인지는
+검증한 배열 내용으로 판단합니다. 공백·키 순서·gzip 여부·`0`과 `0.0` 표기, 마스크가 꺼진
+점의 값은 판정에 영향을 주지 않습니다.
 취소한 요청은 완료까지 자리를 유지해 다음 요청이 쌓이지 않게 합니다.
 캐시는 단일 프로세스 메모리이므로 API는 uvicorn worker 한 개로 운영합니다.
 다중 프로세스 확장에는 공유 중복 처리 저장소가 필요합니다.

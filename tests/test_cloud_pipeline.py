@@ -7,6 +7,7 @@ except ImportError:
     sys.exit(77)
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import HTTPException
+import gzip
 import hashlib
 import io
 import json
@@ -19,6 +20,8 @@ from src.pose_sequence import PoseSequence
 from src.sign_server import (create_app, TranslationService, MockRecognizer, MockTranslator,
                              TranslationRequest, VllmTranslator, MAX_BODY_BYTES)
 from src.cloud_sign import CloudClient, CloudWorker, SegmentRecorder, validate_response
+from src import clock
+from src.translation import Glossary
 
 s=PoseSequence([0,.1,.2],np.full((3,49,2),.4),np.ones((3,49),bool),(640,480))
 payload={**s.to_dict(),"session_id":"fixture","segment_id":"first"}
@@ -42,19 +45,70 @@ bad={**payload,"timestamps":[0,0,.2]}
 assert client.post("/v1/sign/translate",json=bad,headers=headers).status_code==422
 changed={**payload,"coordinates":np.full((3,49,2),.5).tolist()}
 assert client.post("/v1/sign/translate",json=changed,headers=headers).status_code==409
+# Duplicate detection compares processed content, not bytes: key order, spacing and
+# 0 vs 0.0 are the same request; so are values under a false mask.
+jsonh={**headers,"Content-Type":"application/json"}
+reordered=json.dumps(dict(reversed(list({**payload,"timestamps":[0,.1,.2]}.items()))),indent=1)
+assert reordered!=json.dumps(payload)
+assert client.post("/v1/sign/translate",content=reordered,headers=jsonh).json()==outcome
+masked={**payload,"segment_id":"masked","mask":[[j!=48 for j in range(49)]]*3}
+hidden=json.loads(json.dumps(masked))
+hidden["coordinates"][1][48]=[.9,.9]
+assert client.post("/v1/sign/translate",json=masked,headers=headers).status_code==200
+assert client.post("/v1/sign/translate",json=hidden,headers=headers).status_code==200
+assert (TranslationRequest.model_validate(masked).fingerprint()
+        ==TranslationRequest.model_validate(hidden).fingerprint())
+visible=json.loads(json.dumps(masked))
+visible["coordinates"][1][0]=[.9,.9]
+assert client.post("/v1/sign/translate",json=visible,headers=headers).status_code==409
+nan_body=json.dumps(payload).replace("0.4","NaN",1)
+assert '"coordinates":[[[NaN,' in nan_body.replace(" ",""), "a real NaN token, not broken JSON"
+for invalid in (nan_body,"{not json",json.dumps({**payload,"mask":[[1]*49]*3}),
+                json.dumps({**payload,"timestamps":[0,.2,.1]})):
+    response=client.post("/v1/sign/translate",content=invalid,headers=jsonh)
+    assert response.status_code==422 and response.json()["detail"], invalid[:30]
+    # Errors say where and why, never echo the (possibly megabyte) input back.
+    assert all(set(e)=={"type","loc","msg"} for e in response.json()["detail"])
+    assert len(response.content)<2000
+assert "TranslationRequest" in json.dumps(client.get("/openapi.json",headers=headers).json())
 empty={**payload,"segment_id":"empty","mask":np.zeros((3,49),bool).tolist()}
 assert client.post("/v1/sign/translate",json=empty,headers=headers).json()["status"]=="no_sign"
 assert client.post("/v1/sign/translate",content=b" "*(MAX_BODY_BYTES+1),headers=headers).status_code==413
+# gzip bodies: decoded with the same size limit; plain JSON keeps working.
+plain=json.dumps({**payload,"segment_id":"gzip"}).encode()
+packed=gzip.compress(plain,mtime=0)
+gz={**headers,"Content-Type":"application/json","Content-Encoding":"gzip"}
+first=client.post("/v1/sign/translate",content=packed,headers=gz)
+assert first.status_code==200 and len(packed)<len(plain)
+again=client.post("/v1/sign/translate",content=plain,
+                  headers={**headers,"Content-Type":"application/json"})
+assert again.json()==first.json(),"Plain and gzip bodies of one segment are the same request"
+for broken in (b"\x1f\x8bnot gzip",packed[:-4],packed+b"trailing"):
+    assert client.post("/v1/sign/translate",content=broken,headers=gz).status_code==400
+bomb=gzip.compress(b" "*(MAX_BODY_BYTES+1),mtime=0)
+assert len(bomb)<MAX_BODY_BYTES//100
+assert client.post("/v1/sign/translate",content=bomb,headers=gz).status_code==413
+assert client.post("/v1/sign/translate",content=plain,
+                   headers={**headers,"Content-Encoding":"br"}).status_code==415
 
 count=[0]
+sent=[]
 def retry_then_success(request,timeout):
     count[0]+=1
-    assert json.loads(request.data)["segment_id"]=="first"
+    sent.append(request.data)
+    assert request.get_header("Content-encoding")=="gzip"
+    assert json.loads(gzip.decompress(request.data))["segment_id"]=="first"
     if count[0]==1:
         raise urllib.error.URLError("fixture disconnected")
     return io.BytesIO(json.dumps(outcome).encode())
 with patch("urllib.request.urlopen",side_effect=retry_then_success):
     assert CloudClient().translate(payload)==outcome and count[0]==2
+assert sent[0]==sent[1],"A retry resends the identical compressed bytes"
+def plain_only(request,timeout):
+    assert request.get_header("Content-encoding") is None
+    return io.BytesIO(json.dumps(outcome).encode())
+with patch("urllib.request.urlopen",side_effect=plain_only):
+    assert CloudClient(compress=False).translate(payload)==outcome
 try:
     validate_response({**outcome,"segment_id":"other"},payload)
     raise AssertionError("Mismatched result accepted")
@@ -142,7 +196,7 @@ class SlowClient:
         return {**outcome,"segment_id":body["segment_id"],"session_id":body["session_id"]}
 worker=CloudWorker(SlowClient())
 worker.start()
-assert worker.submit(s,time.time()) and not worker.submit(s,time.time())
+assert worker.submit(s,clock.now()) and not worker.submit(s,clock.now())
 worker.cancel()
 end=time.monotonic()+2
 received=None
@@ -156,13 +210,51 @@ worker.join(1)
 assert not worker.is_alive()
 class ExpiredClient(SlowClient):
     timeout=.01
+from src.cloud_sign import describe
+assert describe(urllib.error.HTTPError("u",409,"x",{},None))=="HTTP 409"
+assert describe(TimeoutError())=="시간 초과" and describe(ValueError())=="ValueError"
+assert describe(urllib.error.URLError("refused")).startswith("연결 실패")
 worker=CloudWorker(ExpiredClient())
 worker.start()
-worker.submit(s,time.time())
+worker.submit(s,clock.now())
 time.sleep(.1)
 assert worker.poll()[0]["status"]=="expired"
 worker.stop()
 worker.join(1)
+
+class Unreachable:
+    model="fixture-model"
+    def translate(self,glosses,mapping):
+        raise TimeoutError("upstream timed out")
+class TwoGlosses(MockRecognizer):
+    def predict(self,sequence):
+        return ["안녕하세요","병원"],0.99
+glossary=Glossary({"안녕하세요":"안녕하세요","병원":"병원"},
+                  sentences=[{"glosses":["안녕하세요"],"text":"안녕하세요!","reviewed_by":"fixture"}])
+def ask(service,segment):
+    return service.process(TranslationRequest(**{**payload,"segment_id":segment}))
+reviewed=ask(TranslationService(MockRecognizer(),Unreachable(),glossary),"reviewed")
+assert (reviewed["status"],reviewed["text"],reviewed["source"])==("ok","안녕하세요!","reviewed")
+calibrated=TwoGlosses()
+calibrated.calibration={"enabled":True,"mapping_hash":glossary.policy_hash(),
+                        "language_model":Unreachable.model}
+speaking=TranslationService(calibrated,Unreachable(),glossary)
+assert speaking.speech_enabled
+fallback=ask(speaking,"fallback")
+assert (fallback["status"],fallback["source"],fallback["text"])==("fallback","words","안녕하세요 병원")
+assert fallback["auto_speech"] is False,"A fallback preview is never spoken, even when calibrated"
+assert fallback["issues"]==["generation:TimeoutError"]
+assert "upstream" not in json.dumps(fallback),"Upstream error messages stay on the server"
+assert ask(speaking,"fallback")==fallback,"Fallback is a cached terminal result"
+fallback_payload={**payload,"segment_id":"fallback"}
+assert validate_response(fallback,fallback_payload)
+for unsafe in ({**fallback,"auto_speech":True},{**fallback,"text":" "},
+               {**fallback,"source":"language_model"},{**fallback,"text":"가"*1001}):
+    try:
+        validate_response(unsafe,fallback_payload)
+        raise AssertionError(f"Unsafe fallback accepted: {unsafe['source']}")
+    except ValueError:
+        pass
 
 recorder=SegmentRecorder(max_seconds=.01)
 recorder.start()
@@ -173,4 +265,5 @@ recorder.start()
 recorder.add(s.coordinates[0],s.mask[0],0,(640,480))
 recorder.add(s.coordinates[0],s.mask[0],.1,(1280,720))
 assert recorder.error=="camera_discontinuity"
-print("[OK] API/auth/schema, client retry, vLLM protocol, duplicate/cancel/expiry and overflow")
+print("[OK] API/auth/schema, client retry, vLLM protocol, reviewed sentences, preview-only "
+      "fallback, duplicate/cancel/expiry and overflow")

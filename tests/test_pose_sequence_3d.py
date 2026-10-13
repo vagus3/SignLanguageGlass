@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from src.pose_sequence import (PoseSequence, VERSION, VERSION_3D, FEATURE_DIM, FEATURE_DIM_3D,
                                 WORLD_DIM, features_3d, world_features, world_from_openpose)
-from src.features_v2 import OP_POSE, BODY_NAMES
+from src.joints import OP_POSE, BODY_NAMES
 from src.continuous_sign import CtcRecognizer, Recognizer, save_checkpoint
 from src.cloud_sign import SegmentRecorder
 
