@@ -4,6 +4,7 @@
     "onnx": "1.16.2",
     "onnxruntime": "1.19.2",
     "scikit-learn": "1.5.2",
+    "sherpa-onnx": "1.13.8",
     "vosk": "0.3.44",
     "mediapipe": "0.10.21"
   },
@@ -13,20 +14,24 @@
   "examples": [
     {
       "expected": "안녕하세요",
-      "recognized": "한편 계세요"
+      "recognized": "안녕하세요",
+      "cer": 0.0
     },
     {
       "expected": "병원이 어디예요?",
-      "recognized": "현재 어디 예요"
+      "recognized": "병원이어디예요",
+      "cer": 0.0
     },
     {
       "expected": "감사합니다",
-      "recognized": "현재 한 이다"
+      "recognized": "감사합니다",
+      "cer": 0.0
     }
   ],
   "font": [
     "Galmuri11",
     "Regular"
   ],
-  "vosk_model_loaded": true
+  "stt_backend": "sherpa",
+  "stt_model": "/Users/hgsim/Documents/signglass/models/sherpa-ko-174m-chunk32"
 }

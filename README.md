@@ -29,17 +29,18 @@
 
 | | 상태 |
 |---|---|
-| 소스 모듈·회귀 테스트 | 🟡 48개 (PyTorch→ONNX, CTC·모의 클라우드 통합, HTTP 무인 소크 포함). 깃허브에 올릴 때마다 자동 실행(`.github/workflows/tests.yml`); 실기기 관통 테스트 미완료 — 직접 할 테스트는 [`TEST_CHECKLIST.md`](TEST_CHECKLIST.md) |
+| 소스 모듈·회귀 테스트 | ✅ **53개 전원 통과** (PyTorch→ONNX, CTC·모의 클라우드 통합, HTTP 무인 소크, 얼굴 추적 및 말풍선 UI, 3D 손 특징, 자동 구간 검증 포함). CI 자동 실행(`.github/workflows/tests.yml`); 실기기 관통 테스트 미완료 — 직접 할 테스트는 [`TEST_CHECKLIST.md`](TEST_CHECKLIST.md) |
+| 얼굴 추적 AR 말풍선 & 대화 기록 | ✅ 실시간 카메라 영상 위 AR 말풍선 오버레이, 1:1 공간 ID 추적 및 클릭 기반 화자 수동 선택, 최근 200개 대화 기록 탐색 창(`--transcript`, H/J/K/L) 구현 완료 |
 | 클라우드 연속 번역 | 🟡 좌표 학습·API·vLLM 연동, 기기 인식 비교 경로(B, `--recognize device`)와 A/B 측정 도구 구현; 실제 문장 데이터·GPU 모델·번역 품질 검증 필요 |
-| 3D 방향·자동 구간·특징 비교 | 🟡 3D 손바닥 방향/손목 깊이 분기, 손 움직임 자동 구간(`--auto-segment`), 구성 비교 도구 구현; 합성 데이터로만 검증 |
-| 학습 의존성 | ✅ PyTorch 2.4.1 / ONNX 1.16.2 / scikit-learn 1.5.2 설치 |
-| 학습된 모델 `models/sign_lstm.onnx` | ❌ 없음 — 데이터 수집·학습 필요 |
+| 3D 방향·자동 구간·특징 비교 | 🟡 3D 손바닥 방향/손목 깊이 분기, 손 움직임 자동 구간(`--auto-segment`), 노트북 정면/안경 시점 분기(`--viewpoint`), 특징 구성 비교 도구(`tools/compare_features.py`) 구현 |
+| 학습 의존성 | ✅ PyTorch 2.4.1 / ONNX 1.16.2 / onnxruntime 1.19.2 / scikit-learn 1.5.2 설치 확인 |
+| 학습된 모델 `models/sign_lstm.onnx` | ❌ 없음 — 수어 단어 데이터 수집 및 학습 필요 |
 | 직접 수집한 데이터 `data/raw/**/*.npy` | ❌ 0개 |
-| AI Hub 샘플 | 🟡 3D 변환 완료: 100클립→21시퀀스/20동작 그룹; 한국어 뜻 매핑·추가 화자 필요 |
-| 한국어 STT | 🟡 기본 sherpa-onnx 스트리밍 Zipformer(`models/sherpa-ko-174m-chunk32/`). 합성음성 22문장 CER 13.0% (vosk 58.0%); 실제 목소리 비교 필요 |
-| TTS 캐시 `assets/tts_cache/*.wav` | ✅ macOS Yuna 22개, 16kHz PCM 모노·무음 아님 확인 |
-| 한글 픽셀 폰트 `assets/fonts/Galmuri11.ttf` | ✅ Galmuri v2.40.4 + LICENSE.txt 설치 |
-| 하드웨어 (OLED / 광학계) | ❌ 미착수 |
+| AI Hub 샘플 | 🟡 3D 변환 완료: 100클립→21시퀀스/20동작 그룹; 한국어 뜻 매핑·추가 화자 필요 (`data/processed/aihub3d`) |
+| 한국어 STT | ✅ 기본 sherpa-onnx 스트리밍 Zipformer(`models/sherpa-ko-174m-chunk32/`) 준비 완료. 비교 모델(`sherpa-ko-2024-06-16/`, `models/vosk-ko/`) 및 합성음성 22문장 무결성 검증 완료 |
+| TTS 캐시 `assets/tts_cache/*.wav` | ✅ macOS 22개 wav 및 manifest.json (16kHz PCM 모노, 무음 아님 확인) |
+| 한글 픽셀 폰트 `assets/fonts/Galmuri11.ttf` | ✅ Galmuri v2.40.4 + LICENSE.txt 설치 확인 |
+| 하드웨어 (OLED / 광학계) | ❌ 미착수 (소프트웨어 에뮬레이션 `--display preview`로 검증 가능) |
 
 가장 먼저 검증할 것은 모델 크기가 아니라 **실제 장착 위치에서 손 검출률과 얼굴 검출률이
 각각 충분한가**입니다. 기본 한 카메라, `--face-camera`를 쓰는 하향 손/전방 얼굴 두 카메라,
@@ -56,74 +57,214 @@ vLLM·클라우드 구조 평가, 성능·리팩토링 목록, LLM 학습 판단
 
 ---
 
-## 아키텍처 — 기존 local 경로
+## 시스템 아키텍처
 
-### 스레드 구성
+`signglass`는 GUI와 디스플레이 출력을 담당하는 메인 스레드와 비전·STT·TTS·클라우드 통신을 전담하는 백그라운드 워커 스레드로 분리되어 있습니다.
+MediaPipe와 ONNX는 C++ 구간에서 Python GIL을 해제하므로 멀티코어 환경에서 완전한 병렬 처리가 가능합니다.
 
-GUI는 메인 스레드 전용이고, 무거운 일은 전부 워커로 뺍니다.
-MediaPipe와 ONNX는 C++ 구간에서 GIL을 놓으므로 실제로 병렬입니다.
+### 1. 전체 시스템 구조 및 스레드 데이터 흐름
 
+```mermaid
+flowchart TB
+    subgraph Capture["📷 캡처 & 센서 입력"]
+        Cam1["수어 카메라 (하향/정면)"]
+        Cam2["얼굴 카메라 (전방, 선택)"]
+        Mic["안경 마이크"]
+    end
+
+    subgraph Threads["⚙️ 백그라운드 워커 스레드"]
+        subgraph VisionTh["VisionThread (비전 워커)"]
+            MP["MediaPipe Holistic / Hands"]
+            Norm["246차원 착용형 정규화"]
+            LocalInfer["SignPredictor (ONNX LSTM)"]
+            Seg["ActivitySegmenter (손 움직임 감지)"]
+        end
+
+        subgraph FaceTh["FaceThread (얼굴 워커, 선택)"]
+            FaceDet["경량 얼굴 검출"]
+        end
+
+        subgraph AudioTh["오디오 처리 워커"]
+            STT["SttWorker (sherpa-onnx Zipformer)"]
+            TTS["TtsPlayer (캐시 WAV 재생)"]
+            Gate{{"AudioGate\n(반이중 에코 억제)"}}
+        end
+
+        subgraph CloudWorkerTh["CloudWorker (클라우드 연동)"]
+            Client["CloudClient / GlossClient"]
+        end
+    end
+
+    subgraph MainTh["🖥️ MainThread (GUI & 조율)"]
+        Tracker["FaceTracker (1:1 공간 ID 추적/선택)"]
+        CapState["CaptionState (자막 수명·만료 제어)"]
+        TxtLayout["TextLayout (한글 줄바꿈)"]
+        HUD["HudRenderer"]
+        Overlay["VideoOverlay"]
+        TransView["TranscriptView (대화 기록)"]
+    end
+
+    subgraph Output["👓 출력 장치 & UI"]
+        OLED["OLED 디스플레이 (SSD1306/SSD1309)"]
+        VidWin["영상 창 (실시간 AR 말풍선)"]
+        TransWin["대화 기록 창 (H키)"]
+        Spk["안경 스피커"]
+    end
+
+    subgraph Server["☁️ 클라우드 서버 (FastAPI)"]
+        CTC["CTC 연속 수어 인식"]
+        LLM["번역 모듈 (검수문장 / vLLM)"]
+    end
+
+    %% 파이프라인 연결
+    Cam1 --> MP --> Norm
+    Norm --> LocalInfer
+    Norm --> Seg
+    Cam2 --> FaceDet
+
+    Mic --> Gate
+    Gate -->|음성 스트림| STT
+    STT -->|partial / final 이벤트| CapState
+
+    LocalInfer -->|단어 확정| Phrase["PhraseBuilder"]
+    Phrase -->|발화 지시| Gate
+    Gate -->|재생 중 마이크 뮤트| TTS
+    TTS --> Spk
+
+    Seg -->|문장 구간| Client
+    Client <-->|좌표 또는 ONNX 글로스 / 번역문| Server
+    Server --> CTC --> LLM
+
+    FaceDet --> Tracker
+    MP -.->|얼굴 바운딩 박스| Tracker
+    Tracker --> CapState
+    CapState --> TxtLayout --> HUD & Overlay
+    CapState --> TransView
+
+    HUD --> OLED
+    Overlay --> VidWin
+    TransView --> TransWin
 ```
-┌─ [vision] ────────────────────────────────────────────┐
-│  카메라 read → Holistic → 246차원 특징 → LSTM 추론      │
-│  → 단어 확정                                            │
-└──────────────────┬────────────────────────────────────┘
-                   │ Queue(maxsize=1)  ← 가득 차면 오래된 것을 버림
-  [face, 선택] 전방 카메라 → 경량 얼굴 검출 ────────────┤
-                   ▼
-┌─ [main] ──────────────────────────────────────────────┐
-│  PhraseBuilder(단어열→문장) · HUD 렌더 · 디스플레이 출력 │
-└───┬───────────────────────────────────┬───────────────┘
-    │ say()                             ▲ Queue()
-    ▼                                   │
-┌─ [tts] ──────────────┐   ┌─ [stt] ────┴──────────────┐
-│  캐시 wav 재생        │   │  sherpa-onnx 스트리밍     │
-└──────────┬───────────┘   └────────────▲──────────────┘
-           │  게이트 닫음                │  게이트 열림일 때만 수용
-           └────────►  AudioGate  ◄──────┘
-                    (반이중: 말할 땐 안 듣는다)
+
+> **큐 병목 제어**: 비전 및 디스플레이 프레임 큐는 `maxsize=1`로 최신 프레임만 유지하여 오래된 입력을 버립니다. 오디오 큐는 약 1초 분량으로 엄격히 제한하여 지연 누적을 방지합니다.
+
+---
+
+### 2. Phase 1 — 수어 → 음성 (착용자 → 상대방)
+
+수어 인식을 거쳐 안경 스피커로 합성 음성을 출력하는 파이프라인입니다. 로컬 단어 인식 경로와 클라우드 연속 수어 번역 경로를 모두 지원합니다.
+
+```mermaid
+flowchart LR
+    subgraph Input["입력"]
+        Hand["손·몸 움직임"]
+    end
+
+    subgraph Feature["특징 추출 (src/landmarks.py)"]
+        MP["MediaPipe Holistic"]
+        Extract["246차원 wearable-v3\n(몸: 어깨 기준, 손: 손목/손바닥 기준)"]
+    end
+
+    subgraph LocalPath["Local 인식 경로 (--sign-backend local)"]
+        Window["최근 1.0초 리샘플\n(30프레임 슬라이딩 윈도우)"]
+        ONNX["ONNX LSTM 단어 추론\n(5프레임 스트라이드)"]
+        Latch["3단 확정 판정\n① 신뢰도 ≥ 0.8\n② 5회 중 3회 다수결\n③ 1.2초 쿨다운"]
+        Builder["PhraseBuilder\n(단어열 문장 조합 및 지연 발화)"]
+    end
+
+    subgraph CloudPath["Cloud 인식 경로 (--sign-backend cloud)"]
+        AutoSeg["손 움직임 자동 구간\n(--auto-segment / SPACE)"]
+        PoseSeq["PoseSequence (2D/3D)"]
+        CloudSrv["SignServer (FastAPI)"]
+        CTC["CTC 연속 수어 인식\n(또는 기기 ONNX 인식)"]
+        Trans["번역 엔진\n(검수 문장 → vLLM)"]
+    end
+
+    subgraph AudioOut["음성 출력"]
+        TTS["TtsPlayer (사전 생성 WAV 재생, 지연 0ms)"]
+        Gate{{"AudioGate (반이중 게이트)"}}
+        Spk["안경 스피커"]
+    end
+
+    Hand --> MP --> Extract
+    Extract --> LocalPath
+    Extract --> CloudPath
+
+    LocalPath --> Window --> ONNX --> Latch --> Builder --> TTS
+    CloudPath --> AutoSeg --> PoseSeq --> CloudSrv --> CTC --> Trans --> TTS
+
+    TTS --> Gate --> Spk
 ```
 
-비전·OLED 프레임 큐는 `maxsize=1`로 최신값만 유지하고, 오디오 큐는 약 1초로
-제한합니다. 지연을 만드는 최대 원인은 처리 속도뿐 아니라 큐에 입력이 쌓이는 것입니다.
+1. **랜드마크 추출 & 착용형 정규화 (`src/landmarks.py`)**:
+   - MediaPipe Holistic(포즈 33 + 양손 21×2 + 얼굴 468점)으로부터 246차원 `wearable-v3` 벡터 추출.
+   - 몸은 어깨 기준, 손은 손목/손바닥 기준으로 분리 정규화하여 카메라 화각에서 어깨가 잘려도 손 특징을 보존.
+2. **Local 경로 추론 (`src/predictor.py`)**:
+   - `ADAPTIVE_WINDOW`: 최근 1.0초간의 프레임을 30개로 리샘플링하여 FPS 변동에 강인하게 유지.
+   - 5프레임 스트라이드로 ONNX LSTM 추론 후 **3단 확정**(신뢰도 ≥ 0.8, 5회 중 3회 다수결, 1.2초 쿨다운) 적용.
+   - `PhraseBuilder`가 연속 단어를 조합해 완성된 문장 도출 (예: "이름" + "무엇" → "이름이 뭐예요?").
+3. **Cloud 경로 연속 수어 (`src/cloud_sign.py`, `src/sign_server.py`)**:
+   - 손 움직임 기반 자동 구간 분할(`ActivitySegmenter`) 또는 키 입력(SPACE)으로 발화 구간 검출.
+   - 시퀀스 좌표 전송 후 CTC 모델 디코딩 및 언어 모델(vLLM) 기반 자연어 문장 생성.
+4. **TTS 출력 (`src/tts_player.py`)**:
+   - 미리 생성된 고품질 16kHz WAV 캐시를 비동기 재생 (지연 0ms).
 
-### Phase 1 — 수어 → 음성
+---
 
-```
-MediaPipe Holistic
-  │  pose 33 + 손 21×2 + 얼굴 468 랜드마크
-  ▼
-landmarks.extract()                         src/landmarks.py
-  │  246차원 wearable-v3. 몸=어깨 기준, 손=손목/손바닥 기준
-  │  어깨가 화면에서 잘려도 손 특징은 유지
-  ▼
-SignPredictor.push()                        src/predictor.py
-  │  최근 1.0초를 30개로 리샘플 → ONNX LSTM → 5프레임마다 추론
-  ▼
-3단 확정
-  │  ① 신뢰도 ≥ 0.80  ② 최근 5회 중 3회 다수결  ③ 확정 후 1.2초 쿨다운
-  ▼
-PhraseBuilder                               src/predictor.py
-  │  "이름"+"무엇" → "이름이 뭐예요?"
-  ▼
-TtsPlayer → 안경 스피커                      src/tts_player.py
-     미리 뽑아둔 wav 재생 (지연 0ms)
+### 3. Phase 2 — 음성 → AR 말풍선 (상대방 → 착용자)
+
+상대방의 음성을 실시간 받아쓰기하여 상대 얼굴 옆에 AR 말풍선으로 배치하는 파이프라인입니다.
+
+```mermaid
+flowchart TD
+    subgraph Audio["음성 인식 (STT)"]
+        Mic["상대방 음성 (안경 마이크)"]
+        Gate{{"AudioGate\n(스피커 출력 중 마이크 뮤트)"}}
+        Sherpa["SttWorker (sherpa-onnx Zipformer 스트리밍)\npartial(말하는 중) / final(발화 확정)"]
+    end
+
+    subgraph Vision["얼굴 인식 & 공간 추적"]
+        Cam["전방 카메라 영상"]
+        Det["경량 얼굴 검출 (FaceDetection)"]
+        Track["FaceTracker (src/face_tracker.py)\n• 1:1 공간 ID 매핑\n• 마우스 클릭 수동 화자 선택\n• 0.45초 검출 누락 유예"]
+        Smooth["OneEuroFilter\n(지연 없는 좌표 떨림 보정)"]
+    end
+
+    subgraph Layout["자막 수명 & 레이아웃 관리"]
+        State["CaptionState (src/caption_state.py)\n• 중간결과 실시간 갱신\n• 확정 문장 3~10초 유지\n• 만료/얼굴 유실 타이밍 관리"]
+        Txt["TextLayout (src/text_layout.py)\n• 화면 폭 자동 줄바꿈\n• 최대 3줄 표시 + 생략(…)"]
+        Hist["CaptionHistory (src/caption_history.py)\n• 최근 확정 발화 200개 메모리 보관"]
+    end
+
+    subgraph Display["다중 디스플레이 출력"]
+        OLED["OLED HUD (SSD1306/SSD1309)\n• 얼굴 옆 말풍선 배치\n• 시야 밖 화살표 가이드\n• 하단 고정 자막 (--fixed-caption)"]
+        Video["VideoOverlay (웹캠 창)\n• 실제 카메라 영상 위 AR 말풍선\n• 화자 선택 박스 & 음성 인식 실시간 표시"]
+        Transcript["TranscriptView (대화 기록 창)\n• H키 토글, J/K 스크롤, L 최신 복귀"]
+    end
+
+    Mic --> Gate --> Sherpa --> State
+    Cam --> Det --> Track --> Smooth --> State
+    State --> Txt
+    State --> Hist
+
+    Txt --> OLED
+    Txt --> Video
+    Hist --> Transcript
 ```
 
-### Phase 2 — 음성 → AR 말풍선
-
-```
-안경 마이크
-  ▼
-SttWorker (sherpa-onnx 스트리밍)             src/stt_worker.py
-  │  partial(말하는 중) / final(발화 확정)
-  ▼                          landmarks.face_center_px()  ← 상대 얼굴 위치
-HudRenderer.render()  ◄──────  OneEuroPoint 로 떨림 제거
-  │                            hud.camera_to_hud() 로 시야·시차 보정
-  │  말풍선을 얼굴 옆에. 자리 없으면 반대편. 시야 밖이면 화살표.
-  ▼
-oled_bridge → OLED                           src/oled_bridge.py
-```
+1. **스트리밍 STT & 반이중 게이트 (`src/stt_worker.py`, `src/audio_gate.py`)**:
+   - `sherpa-onnx` Zipformer 스트리밍으로 상대방 말을 즉각 텍스트화 (`partial` 중간 결과 및 `final` 확정 이벤트).
+   - 착용자가 수어로 말하여 TTS가 출력되는 동안에는 `AudioGate`가 마이크를 차단하여 자막 루프(에코) 방지.
+2. **공간 얼굴 추적 (`src/face_tracker.py`)**:
+   - 얼굴 검출 결과에 공간 추적 ID를 부여하여 발화 시작 시점의 화자와 1:1 바인딩.
+   - 마우스 좌클릭으로 대화 상대를 직접 선택 가능하며, `OneEuroFilter`로 조준 떨림을 지연 없이 제거.
+3. **자막 수명 & 레이아웃 (`src/caption_state.py`, `src/text_layout.py`)**:
+   - 발화 중에는 실시간 갱신, 발화 종료 후 문장 길이에 따라 3~10초간 말풍선 유지.
+   - 화면 폭에 맞춘 자동 개행 및 최대 3줄 표시.
+4. **다양한 출력 경로**:
+   - **OLED HUD**: `HudRenderer`를 거쳐 128×64 SSD1306/SSD1309 디스플레이에 렌더링.
+   - **비디오 오버레이**: 웹캠 영상 창 위에 AR 말풍선과 화자 추적 박스를 오버레이 (`--video-captions`).
+   - **대화 기록 창**: 터미널 단축키 `H`로 전체 대화 기록 창을 열어 스크롤 탐색 가능 (`--transcript`).
 
 ---
 
@@ -134,10 +275,10 @@ config.py            ★ 모든 튜닝은 여기서만. 다른 모듈은 여기�
 main.py              ★ 통합 실행 (비전 스레드 + 메인 루프)
 
 src/
-  landmarks.py       ★ 랜드마크 추출·정규화 (246차원). 가장 중요한 모듈
+  landmarks.py       ★ 랜드마크 추출·정규화 (246차원 wearable-v3). 핵심 모듈
   camera.py            공용 카메라 (수동 노출 + 끊김 재연결)
-  one_euro.py          저지연 좌표 스무딩 (이동평균보다 지연이 적음)
-  predictor.py       ★ 슬라이딩 추론 + 3단 확정 + 문장 조합
+  one_euro.py          저지연 좌표 스무딩 (One Euro Filter)
+  predictor.py       ★ 슬라이딩 추론 + 3단 확정 + 문장 조합 (PhraseBuilder)
   runtime.py         ★ 통합 추론 런타임 (onnx / torch / keras)
   joints.py            MediaPipe·OpenPose 공통 관절 정의 (단일 출처)
   features_v2.py       AI Hub(OpenPose) ↔ MediaPipe 공통 부분집합, 101차원 (레거시)
@@ -145,26 +286,36 @@ src/
   hud.py             ★ 좌표변환 + 말풍선 렌더 + SSD1306 패킹 + 표시 내용 선택(HudContent)
   oled_bridge.py       디스플레이 백엔드 (preview / serial / pi / null)
   stt_worker.py        스트리밍 STT 스레드 (sherpa-onnx 기본, vosk 대체)
-  tts_player.py        비동기 TTS 재생
-  audio_gate.py        반이중 게이트 (에코 루프 차단)
+  tts_player.py        비동기 TTS 재생 워커
+  audio_gate.py        반이중 게이트 (스피커 출력 중 마이크 뮤트, 에코 루프 차단)
   latency.py           지연 측정 하네스 (p50 / p95, 최근 표본·실행 전체 구분)
   clock.py             경과 시간 시계(clock.now) / Unix 시각(clock.unix_time) 분리
-  pose_sequence.py     cloud 경로 좌표 규격(2D/3D)과 특징
-  continuous_sign.py   CTC 연속 인식 학습·추론 (PyTorch)
-  ctc_runtime.py       torch 없는 CTC 디코딩·ONNX 추론 (장치 인식 비교용)
-  translation.py       용어집·검수 문장·언어 모델·실패 시 미리보기
+  pose_sequence.py     cloud 경로 좌표 규격(2D/3D)과 특징 변환
+  continuous_sign.py   CTC 연속 인식 모델 정의·학습·추론 (PyTorch)
+  ctc_runtime.py       torch 없는 CTC 디코딩·ONNX 추론 (기기 인식 비교 경로 B)
+  translation.py       용어집·검수 문장·언어 모델(vLLM)·실패 시 미리보기
   sign_server.py       번역 API 서버 (FastAPI)
   cloud_sign.py        장치 쪽 구간 녹화·서버 클라이언트
-  cloud_control.py     cloud 경로 명령·결과 처리 (main.py 에서 분리)
-  segmenter.py         손 움직임 기반 자동 문장 구간
+  cloud_control.py     cloud 경로 명령·결과 처리
+  segmenter.py         손 움직임 기반 자동 문장 구간 (ActivitySegmenter)
   data_sources.py      학습 데이터 출처 (manifest → 모델 → /health)
-  collect.py           Step 1-1 데이터 수집기
-  train.py             Step 1-2 LSTM 학습
+  dataset_contract.py  데이터셋 규격 및 메타데이터 계약 검증
+  collect.py           Step 1-1 단어 데이터 수집기
+  collect_continuous.py 문장 단위 연속 수어 좌표 수집기
+  train.py             Step 1-2 LSTM 단어 모델 학습
+  train_continuous.py  CTC 연속 수어 모델 학습 스크립트
+  face_tracker.py    ★ 다중 얼굴 검출, 1:1 공간 ID 추적 및 화자 선택
+  caption_state.py   ★ 자막 수명 주기(홀드/만료/얼굴 연결) 상태 머신
+  caption_history.py   최근 200개 확정 대화 기록 메모리 보관
+  text_layout.py       화면 폭 맞춤 한글 자동 줄바꿈 및 말풍선 박스 계산
+  video_overlay.py   ★ 카메라 영상 위 실시간 AR 말풍선·얼굴 테두리 렌더링
+  transcript_view.py   OpenCV 기반 대화 기록 GUI 창 (H키 토글, J/K 스크롤)
   calibrate.py         시차(parallax) 보정 도구
   build_tts_cache.py   TTS wav 사전 생성 (1회)
 
 tools/
   evaluate.py          ★ 저장된 ONNX 를 홀드아웃셋으로 평가
+  evaluate_continuous.py 연속 수어 CTC 모델 홀드아웃셋 평가
   demo.py              ★ 데모 시나리오 재생·녹화 (카메라·모델 불필요)
   to_onnx.py           외부/레거시 모델 → ONNX 변환 (기본 학습은 자동 변환)
   inspect_model.py     모델 형식 자동 판별·요약
@@ -172,21 +323,23 @@ tools/
   merge_parts.py       AI Hub 분할압축 병합
   check_mount.py       실제 장착 시점 손/얼굴 검출률과 FPS 측정
   prepare_aihub3d.py   3D 손 데이터 변환·중복 제거·원본 동작 그룹 감사
-  verify_assets.py     모델/폰트/TTS 및 합성음성→STT 검사
+  verify_assets.py     모델/폰트/TTS 및 합성음성→STT 무결성 검사
   prepare_continuous.py  OpenPose JSON → 문장 좌표 데이터셋
   extract_mediapipe.py   원본 영상 → 실행 시와 같은 MediaPipe 좌표 데이터셋
   compare_extractors.py  두 데이터셋의 좌표 차이·프레임 어긋남·좌우 손 비교
+  compare_features.py    특징 구성별(2D/3D/정규화) 성능·손실 비교
   export_ctc_onnx.py     CTC 체크포인트 → ONNX (PyTorch 동등성 검사 포함)
   benchmark_paths.py     서버 인식(A) / 기기 인식(B) 배치 비교: 지연·전송량·CPU
   evaluate_rounding.py   좌표 반올림이 크기·특징·인식에 주는 영향
   compare_stt.py         STT 엔진 비교: CER·RTF·자막 시점
   review_sentences.py    의미 검수 시트 내보내기/가져오기 (검수 문장·보정 연결)
   evaluate_segments.py   자동 구간 평가: 경계 지연·잘림·분할·오검출
+  send_pose.py           포즈 시퀀스 파일/더미 데이터 서버 전송 및 응답 테스트
   soak.py                HTTP 무인 소크 (장애 주입, 발화 감사, 메모리·스레드)
 
 tests/
   run_all.py           전체 테스트 실행 (pytest 불필요)
-  test_*.py            회귀 테스트 48종 (서버·학습 검사는 선택 의존성 필요)
+  test_*.py            회귀 테스트 53종 (전원 통과)
 
 firmware/
   oled_bridge.ino      PC 구조에서만 필요한 USB↔SPI 브리지 펌웨어
@@ -355,8 +508,12 @@ python tools/evaluate.py --split group             # 배포하는 그 파일을 
 | 명령 | 용도 |
 |---|---|
 | `python main.py --debug` | 통합 실행 + 카메라 뷰 |
+| `python main.py --video-captions --transcript` | 카메라 영상 위 실시간 AR 말풍선 + 대화 기록 탐색 창 |
+| `python main.py --sign-backend cloud --auto-segment` | 클라우드 연속 수어 번역 (손 움직임 자동 구간 분할) |
+| `python main.py --sign-backend cloud --viewpoint webcam` | 노트북 정면 웹캠 시점 자동 구간 규칙 (손 내리면 문장 종료) |
+| `python main.py --sign-backend cloud --recognize device --onnx <PATH>` | 기기 인식(B 경로): 온디바이스 CTC ONNX 추론 후 서버로 글로스만 전송 |
 | `python main.py --no-stt` | Phase 1(수어→음성)만 |
-| `python main.py --no-sign` | Phase 2(음성→자막)만 — **모델 없이도 동작** |
+| `python main.py --no-sign` | Phase 2(음성→자막)만 — **수어 모델 없이도 동작** |
 | `python main.py --no-sign --fixed-caption` | 카메라 없이 하단 고정 자막 — 현장 안정형 폴백 |
 | `python main.py --sign-camera 0 --face-camera 1` | 하향 수어/전방 얼굴 두 카메라 통합 |
 | `python main.py --stats` | 지연을 구간별로 측정해 종료 시 p50/p95 출력 |
@@ -365,9 +522,10 @@ python tools/evaluate.py --split group             # 배포하는 그 파일을 
 | `python main.py --no-gate` | 반이중 해제 (유선 이어폰으로 들을 때만) |
 | `python tools/demo.py --record demo.mp4` | 데모 시나리오 재생·녹화 |
 | `python tools/check_mount.py --duration 30 --preview` | 장착 시점 손/얼굴 검출률 측정 |
+| `python tools/compare_features.py` | 특징 구성(2D/3D/정규화)별 손실 및 성능 비교 |
 | `python -m src.calibrate --display serial` | 실제 OLED 시차 보정 (Pi는 `--display pi`) |
 | `python -m src.hud` | 말풍선 레이아웃 미리보기 |
-| `python tests/run_all.py` | 회귀 테스트 |
+| `python tests/run_all.py` | 회귀 테스트 53종 전체 실행 |
 
 `DISPLAY_BACKEND = "preview"`면 **하드웨어 없이** HUD 레이아웃·좌표 매핑·가독성이
 전부 검증됩니다. Phase 1·2를 0원으로 끝낼 수 있는 지점입니다.
