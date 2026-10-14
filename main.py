@@ -98,87 +98,110 @@ class VisionThread(threading.Thread):
             self.out.put(("error", "카메라를 열 수 없습니다"))
             return
 
-        holistic = L.make_holistic(C.MODEL_COMPLEXITY)
+        holistic = face_detector = None
+        try:
+            holistic = (L.make_holistic(C.MODEL_COMPLEXITY)
+                        if self.enable_sign or self.segment_recorder is not None else None)
+            face_detector = None
+            if self.track_face:
+                import mediapipe as mp
+                face_detector = mp.solutions.face_detection.FaceDetection(
+                    model_selection=0, min_detection_confidence=0.5)
 
-        predictor = None
-        if self.enable_sign:
-            try:
-                from src.predictor import SignPredictor
-                predictor = SignPredictor()
-                print(f"[vision] 모델 로드 완료 ({len(predictor.labels)} 클래스)")
-            except Exception as e:
-                print(f"[vision] 수어 모델 없음 -> Phase 2 만 동작합니다\n         {e}")
+            predictor = None
+            if self.enable_sign:
+                try:
+                    from src.predictor import SignPredictor
+                    predictor = SignPredictor()
+                    print(f"[vision] 모델 로드 완료 ({len(predictor.labels)} 클래스)")
+                except Exception as e:
+                    print(f"[vision] 수어 모델 없음 -> Phase 2 만 동작합니다\n         {e}")
 
-        smooth = OneEuroPoint(C.FILTER_MIN_CUTOFF, C.FILTER_BETA)
-        t_prev, n = clock.now(), 0
+            smooth = OneEuroPoint(C.FILTER_MIN_CUTOFF, C.FILTER_BETA)
+            t_prev, n = clock.now(), 0
 
-        st = self.stats
-        while not self._quit.is_set():
-            t0 = clock.now()
-            ok, frame = cap.read()
-            if not ok:
-                continue            # CameraReader 가 내부에서 sleep + 재연결 처리
-            t_cap = clock.now()     # 이 프레임을 실제로 손에 넣은 시각 (경과 시간 시계)
-            st.add("capture", (t_cap - t0) * 1000)
-            h, w = frame.shape[:2]
+            st = self.stats
+            while not self._quit.is_set():
+                t0 = clock.now()
+                ok, frame = cap.read()
+                if not ok:
+                    continue            # CameraReader 가 내부에서 sleep + 재연결 처리
+                t_cap = clock.now()     # 이 프레임을 실제로 손에 넣은 시각 (경과 시간 시계)
+                st.add("capture", (t_cap - t0) * 1000)
+                h, w = frame.shape[:2]
 
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            rgb.flags.writeable = False
-            res = holistic.process(rgb)
-            t_hol = clock.now()
-            st.add("holistic", (t_hol - t_cap) * 1000)
-            self.ms_vision = (t_hol - t0) * 1000
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                rgb.flags.writeable = False
+                res = holistic.process(rgb) if holistic is not None else None
+                t_hol = clock.now()
+                if holistic is not None:
+                    st.add("holistic", (t_hol - t_cap) * 1000)
+                face_boxes = (L.detection_face_boxes_px(face_detector.process(rgb), w, h)
+                              if face_detector is not None else [])
+                if face_detector is not None:
+                    st.add("face_detection", (clock.now() - t_hol) * 1000)
+                self.ms_vision = (clock.now() - t0) * 1000
 
-            # Capture every processed frame before the lossy preview queue.
-            if self.segment_recorder is not None:
-                points, mask = from_mediapipe(res)
-                world = world_from_mediapipe(res, (w, h)) if self.pose_3d else (None, None)
-                self.segment_recorder.add(points, mask, t_cap, (w, h), *world)
-                if self.segmenter is not None:
-                    event = self.segmenter.update(points, mask, t_cap,
-                                                  self.segment_recorder.active, (w, h))
-                    if event:
-                        self.segment_events.put("auto_" + event)
+                # Capture every processed frame before the lossy preview queue.
+                if self.segment_recorder is not None:
+                    points, mask = from_mediapipe(res)
+                    world = world_from_mediapipe(res, (w, h)) if self.pose_3d else (None, None)
+                    self.segment_recorder.add(points, mask, t_cap, (w, h), *world)
+                    if self.segmenter is not None:
+                        event = self.segmenter.update(points, mask, t_cap,
+                                                      self.segment_recorder.active, (w, h))
+                        if event:
+                            self.segment_events.put("auto_" + event)
 
-            word, word_t = None, 0.0
-            if predictor is not None:
-                with st.span("feature"):
-                    feat = L.extract(res)
-                # push 안에 ONNX 추론이 들어 있습니다. infer 는 런타임이 따로 잽니다.
-                word = predictor.push(feat, t=t_cap)
-                st.add("infer", predictor.last_ms)
-                if word:
-                    word_t = clock.now()
-                    # 확정을 만든 추론에 쓰인 최신 프레임부터 확정까지
-                    st.add("recognition",
-                           (word_t - predictor.last_frame_t) * 1000)
-            st.add("sign_total", (clock.now() - t0) * 1000)
+                word, word_t = None, 0.0
+                if predictor is not None:
+                    with st.span("feature"):
+                        feat = L.extract(res)
+                    # push 안에 ONNX 추론이 들어 있습니다. infer 는 런타임이 따로 잽니다.
+                    word = predictor.push(feat, t=t_cap)
+                    st.add("infer", predictor.last_ms)
+                    if word:
+                        word_t = clock.now()
+                        # 확정을 만든 추론에 쓰인 최신 프레임부터 확정까지
+                        st.add("recognition",
+                               (word_t - predictor.last_frame_t) * 1000)
+                st.add("sign_total", (clock.now() - t0) * 1000)
 
-            face = L.face_center_px(res, w, h) if self.track_face else None
-            if face:
-                face = smooth(face[0], face[1], clock.now())
-            else:
-                smooth.reset()
+                face = None
+                if len(face_boxes) == 1:
+                    x1, y1, x2, y2 = face_boxes[0]
+                    face = ((x1 + x2) / 2, (y1 + y2) / 2)
+                if face:
+                    face = smooth(face[0], face[1], clock.now())
+                else:
+                    smooth.reset()
 
-            n += 1
-            if n >= 15:
-                now = clock.now()
-                self.fps = n / max(now - t_prev, 1e-6)
-                t_prev, n = now, 0
+                n += 1
+                if n >= 15:
+                    now = clock.now()
+                    self.fps = n / max(now - t_prev, 1e-6)
+                    t_prev, n = now, 0
 
-            self._emit(("frame", {
-                "frame": frame, "face": face, "word": word,
-                "word_t": word_t,
-                "size": (w, h), "fps": self.fps,
-                "in_fps": getattr(predictor, "last_fps", 0.0),
-                "conf": getattr(predictor, "last_conf", 0.0),
-                "raw": getattr(predictor, "last_raw", None),
-                "ms_vision": self.ms_vision,
-                "ms_infer": getattr(predictor, "last_ms", 0.0),
-            }))
+                self._emit(("frame", {
+                    "frame": frame, "face": face, "word": word,
+                    "face_boxes": face_boxes, "captured_at": t_cap,
+                    "word_t": word_t,
+                    "size": (w, h), "fps": self.fps,
+                    "in_fps": getattr(predictor, "last_fps", 0.0),
+                    "conf": getattr(predictor, "last_conf", 0.0),
+                    "raw": getattr(predictor, "last_raw", None),
+                    "ms_vision": self.ms_vision,
+                    "ms_infer": getattr(predictor, "last_ms", 0.0),
+                }))
 
-        cap.release()
-        holistic.close()
+        except Exception as exc:
+            self._emit(("error", str(exc)))
+        finally:
+            cap.release()
+            if holistic is not None:
+                holistic.close()
+            if face_detector is not None:
+                face_detector.close()
 
     def _emit(self, item):
         """큐를 쌓지 않고 항상 최신 프레임만 유지."""
@@ -213,15 +236,17 @@ class FaceThread(threading.Thread):
         if not cap.ok():
             self._emit(("error", f"전방 카메라 {self.camera_index}를 열 수 없습니다"))
             return
-        detector = mp.solutions.face_detection.FaceDetection(
-            model_selection=0, min_detection_confidence=0.5)
+        detector = None
         smooth = OneEuroPoint(C.FILTER_MIN_CUTOFF, C.FILTER_BETA)
         try:
+            detector = mp.solutions.face_detection.FaceDetection(
+                model_selection=0, min_detection_confidence=0.5)
             while not self._quit.is_set():
                 ok, frame = cap.read()
                 if not ok:
                     continue
                 h, w = frame.shape[:2]
+                captured_at = clock.now()
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 rgb.flags.writeable = False
                 res = detector.process(rgb)
@@ -230,12 +255,15 @@ class FaceThread(threading.Thread):
                     face = smooth(face[0], face[1], clock.now())
                 else:
                     smooth.reset()
-                self._emit(("face", {"face": face, "size": (w, h), "frame": frame}))
+                self._emit(("face", {"face": face, "size": (w, h), "frame": frame,
+                                     "face_boxes": L.detection_face_boxes_px(res, w, h),
+                                     "captured_at": captured_at}))
         except Exception as e:
             self._emit(("error", str(e)))
         finally:
             cap.release()
-            detector.close()
+            if detector is not None:
+                detector.close()
 
     def _emit(self, item):
         try:
@@ -297,6 +325,10 @@ def main():
     ap.add_argument("--display", default=None,
                     choices=["preview", "serial", "pi", "null"])
     ap.add_argument("--debug", action="store_true", help="카메라 뷰도 함께 표시")
+    ap.add_argument("--video-captions", action=argparse.BooleanOptionalAction, default=None,
+                    help="영상 위 말풍선 표시 (preview + 얼굴 카메라 사용 시 기본 활성화)")
+    ap.add_argument("--transcript", action="store_true",
+                    help="확정된 음성의 대화 기록 창도 표시 (H로 열기/닫기)")
     ap.add_argument("--no-gate", action="store_true",
                     help="반이중 게이트 해제 (유선 이어폰으로 들을 때만)")
     ap.add_argument("--stats", nargs="?", const="", default=None,
@@ -314,6 +346,9 @@ def main():
     from src.oled_bridge import make_display
     from src.predictor import PhraseBuilder
     from src.audio_gate import AudioGate, NullGate
+    from src.caption_state import CaptionState
+    from src.face_tracker import FaceTracker
+    from src.caption_history import CaptionHistory
 
     from src.latency import LatencyTracker, NullTracker
     stats = (LatencyTracker(log_path=a.stats or None) if a.stats is not None
@@ -385,7 +420,7 @@ def main():
     if not a.no_stt:
         from src.stt_worker import SttWorker
         sq = queue.Queue()
-        stt = SttWorker(sq, gate=gate, backend=a.stt)
+        stt = SttWorker(sq, gate=gate, backend=a.stt, caption_events=True)
         stt.start()
 
     tts = None
@@ -397,6 +432,26 @@ def main():
     hud = HudRenderer()
     content = HudContent(hud)
     display = make_display(a.display)
+    captions = CaptionState(C.CAPTION_HOLD_SEC, C.CAPTION_PARTIAL_TIMEOUT, C.FACE_LOST_SEC)
+    history = CaptionHistory(C.CAPTION_HISTORY_LIMIT)
+    faces = FaceTracker(C.FACE_LOST_SEC)
+    video_enabled = ((a.video_captions if a.video_captions is not None else
+                      getattr(display, "has_window", False) and not a.fixed_caption)
+                     and bool(vision or face_thread))
+    overlay = None
+    if video_enabled:
+        from src.video_overlay import VideoOverlay
+        overlay = VideoOverlay()
+    camera_frame = None
+    camera_frame_at = float("-inf")
+    displayed_caption = None
+    mouse_actions = queue.Queue()
+    video_window = "Signglass - captions"
+    transcript_window = "Signglass - transcript"
+    transcript_open = a.transcript
+    transcript = None
+    transcript_stamp = None
+    last_video_draw = float("-inf")
     phrase = PhraseBuilder()
     if cloud is not None:
         from src.cloud_control import CloudController
@@ -405,12 +460,28 @@ def main():
     pending_word_t = 0.0        # 아직 발화 안 된 단어가 확정된 시각
     last_face, last_size = None, (C.CAM_W, C.CAM_H)
 
-    has_window = bool((a.debug and (vision or face_thread))
+    has_window = bool(video_enabled or transcript_open or (a.debug and (vision or face_thread))
                       or getattr(display, "has_window", False))
+
+    def video_mouse(event, x, y, flags, param):
+        if event in (cv2.EVENT_LBUTTONDOWN, cv2.EVENT_RBUTTONDOWN):
+            mouse_actions.put(("select" if event == cv2.EVENT_LBUTTONDOWN else "auto", x, y))
+
+    def transcript_mouse(event, x, y, flags, param):
+        if event == cv2.EVENT_MOUSEWHEEL:
+            # OpenCV exposes the signed wheel delta in the upper 16 bits.
+            delta = (flags >> 16) & 0xFFFF
+            if delta >= 0x8000:
+                delta -= 0x10000
+            if delta:
+                mouse_actions.put(("scroll", 3 if delta > 0 else -3, 0))
 
     print("실행 중. " + ("q 로 종료." if has_window else "Ctrl+C 로 종료."))
 
     try:
+        if overlay is not None:
+            cv2.namedWindow(video_window, cv2.WINDOW_AUTOSIZE)
+            cv2.setMouseCallback(video_window, video_mouse)
         while True:
             # ---- 비전 ----
             try:
@@ -418,11 +489,19 @@ def main():
                     raise queue.Empty
                 kind, payload = vq.get(timeout=0.05)
                 if kind == "error":
-                    print("ERROR:", payload)
-                    break
+                    print("[vision]", payload, "-> 고정 자막으로 계속합니다")
+                    vq = None
+                    if face_thread is None:
+                        faces.clear()
+                        camera_frame_at = float("-inf")
+                    continue
                 if face_thread is None:
                     last_face = payload["face"]
                     last_size = payload["size"]
+                    faces.update(payload.get("face_boxes", []), last_size,
+                                 payload.get("captured_at", clock.now()))
+                    camera_frame = payload["frame"]
+                    camera_frame_at = payload.get("captured_at", clock.now())
                 if payload["word"]:
                     print(f"[수어] {payload['word']}")
                     # 여기서 바로 발화하지 않습니다. 조합 규칙이 완성될 수도
@@ -433,7 +512,7 @@ def main():
                     else:
                         pending_word_t = payload["word_t"]
                 if a.debug:
-                    v = payload["frame"]
+                    v = payload["frame"].copy()
                     if C.MIRROR_PREVIEW:
                         v = cv2.flip(v, 1)
                     txt = (f"{payload['fps']:.0f}fps  "
@@ -460,16 +539,42 @@ def main():
                         print("[face]", payload, "-> 고정 자막으로 계속합니다")
                         fq = None
                         last_face = None
+                        faces.clear()
+                        # Keep the last image only as a background; never keep
+                        # a stale person visible when the camera has failed.
+                        if camera_frame is not None:
+                            camera_frame = camera_frame * 0
                     else:
                         last_face, last_size = payload["face"], payload["size"]
+                        faces.update(payload.get("face_boxes", []), last_size,
+                                     payload.get("captured_at", clock.now()))
+                        camera_frame = payload["frame"]
+                        camera_frame_at = payload.get("captured_at", clock.now())
                         if a.debug:
-                            fv = payload["frame"]
+                            fv = payload["frame"].copy()
                             if last_face:
                                 cv2.drawMarker(fv, (int(last_face[0]), int(last_face[1])),
                                                (0, 255, 255), cv2.MARKER_CROSS, 32, 2)
                             cv2.imshow("face camera (debug)", fv)
                 except queue.Empty:
                     pass
+
+            while not mouse_actions.empty():
+                action, x, y = mouse_actions.get_nowait()
+                if action == "scroll":
+                    if transcript is not None:
+                        transcript.scroll(x)
+                    continue
+                now = clock.now()
+                if action == "auto":
+                    faces.automatic(now)
+                    captions.release_anchor()
+                elif now - camera_frame_at <= C.FACE_LOST_SEC and not a.fixed_caption:
+                    if C.MIRROR_PREVIEW and not separate_face:
+                        x = last_size[0] - 1 - x
+                    if faces.select_at(x, y, now):
+                        captions.release_anchor()
+                        print(f"[caption] 대상 {faces.selected_id} 선택: 다음 발화부터 적용")
 
             # 조합 대기가 끝난 단어를 흘려보냅니다 (이중 발화 방지의 나머지 절반)
             pend = phrase.poll()
@@ -488,31 +593,86 @@ def main():
             # ---- STT ----
             if sq is not None:
                 while not sq.empty():
-                    kind, text = sq.get_nowait()
+                    kind, event = sq.get_nowait()
                     if kind == "error":
-                        print("[stt]", text)
+                        print("[stt]", event)
+                        captions.text = ""
                         sq = None
                         break
-                    content.partner(text, partial=(kind == "partial"))
-                    if kind == "final":
-                        print(f"[음성] {text}")
+                    observed_face = None if a.fixed_caption else faces.at(event.observed_at)
+                    accepted = captions.update(event, observed_face)
+                    if kind == "final" and accepted:
+                        track = None if a.fixed_caption else faces.current(clock.now())
+                        anchor = captions.anchor(track, clock.now())
+                        history.append(event, anchor.track_id if anchor else None)
+                        print(f"[음성] {event.text}")
 
             # ---- HUD ----
             # 실물 HUD 는 한 장에 더 최근 내용을, 노트북 미리보기는 두 영역을 함께.
-            face_xy = None if a.fixed_caption else last_face
+            now = clock.now()
+            track = None if a.fixed_caption else faces.current(now)
+            anchor = captions.anchor(track, now)
+            face_xy = anchor.center if anchor else None
+            visible = captions.visible(now)
+            caption_key = (captions.utterance_id, captions.text, captions.partial, visible)
+            if caption_key != displayed_caption:
+                content.partner(captions.text if visible else "", partial=captions.partial)
+                displayed_caption = caption_key
+            # CaptionState owns the expiration; do not restart HUD ordering on
+            # every video frame just to keep a long final visible.
+            if visible:
+                content.hold_sec = max(0, captions.expires_at - captions.updated_at)
             with stats.span("render"):
                 img = (content.dual(face_xy, last_size) if getattr(display, "dual", False)
                        else content.frame(face_xy, last_size))
             with stats.span("display"):
                 display.show(img)
+                if overlay is not None and now - last_video_draw >= 1.0 / 30:
+                    if camera_frame is None:
+                        import numpy as np
+                        camera_frame = np.zeros((C.CAM_H, C.CAM_W, 3), dtype=np.uint8)
+                    background = (camera_frame if now - camera_frame_at <= 1.0
+                                  else camera_frame * 0)
+                    video = overlay.render(background, captions, track, now,
+                                           mirror=C.MIRROR_PREVIEW and not separate_face,
+                                           tracks=faces.tracks(now), manual=faces.manual,
+                                           selected_id=faces.selected_id)
+                    if not gate.is_open():
+                        cv2.putText(video, "MIC MUTED (TTS)", (16, 80),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+                    cv2.imshow(video_window, video)
+                    last_video_draw = now
+                if transcript_open:
+                    if transcript is None:
+                        from src.transcript_view import TranscriptView
+                        transcript = TranscriptView()
+                        cv2.namedWindow(transcript_window, cv2.WINDOW_AUTOSIZE)
+                        cv2.setMouseCallback(transcript_window, transcript_mouse)
+                    stamp = (history.revision, transcript.offset)
+                    if stamp != transcript_stamp:
+                        cv2.imshow(transcript_window, transcript.render(history))
+                        transcript_stamp = (history.revision, transcript.offset)
 
             # 창이 하나도 없으면 waitKey 가 키를 못 받고 루프가 CPU 를 100%
             # 태웁니다(--display null 이고 --debug 도 아닐 때). 그땐 sleep 으로
             # 양보하고 Ctrl+C 로 종료하게 둡니다.
+            has_window = bool(video_enabled or transcript_open
+                              or (a.debug and (vision or face_thread))
+                              or getattr(display, "has_window", False))
             if has_window:
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     break
+                if key == ord("h"):
+                    transcript_open = not transcript_open
+                    if not transcript_open:
+                        cv2.destroyWindow(transcript_window)
+                        transcript = None
+                        transcript_stamp = None
+                elif key == ord("l") and transcript is not None:
+                    transcript.latest()
+                elif key in (ord("k"), ord("j")) and transcript is not None:
+                    transcript.scroll(3 if key == ord("k") else -3)
                 if controller is not None and a.cloud_controls == "keyboard":
                     if key == ord(" "):
                         controller.toggle()

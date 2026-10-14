@@ -214,6 +214,19 @@ def face_center_px(results, w, h):
     return (sx / n * w, sy / n * h)
 
 
+def detection_face_boxes_px(results, w, h):
+    """All valid face boxes, in unmirrored camera pixels (x1, y1, x2, y2)."""
+    boxes = []
+    for detection in getattr(results, "detections", None) or []:
+        box = detection.location_data.relative_bounding_box
+        x1, y1 = max(0.0, box.xmin * w), max(0.0, box.ymin * h)
+        x2 = min(float(w), (box.xmin + box.width) * w)
+        y2 = min(float(h), (box.ymin + box.height) * h)
+        if x2 > x1 and y2 > y1:
+            boxes.append((x1, y1, x2, y2))
+    return boxes
+
+
 def detection_face_center_px(results, w, h):
     """MediaPipe FaceDetection 결과에서 가장 확실한 얼굴 중심을 반환합니다."""
     detections = getattr(results, "detections", None) or []

@@ -179,7 +179,8 @@ else:
             return io.BytesIO(r.content)
 
         class Stt:
-            def __init__(self, out, gate=None, backend=None):
+            def __init__(self, out, gate=None, backend=None, caption_events=False):
+                assert caption_events, "Main uses utterance-aware caption events"
                 engines.append(backend)
 
             def start(self):

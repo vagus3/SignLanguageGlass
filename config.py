@@ -158,6 +158,10 @@ HUD_MAX_LINES = 3
 HUD_HOLD_SEC = 4.0           # 자막 유지 시간
 HUD_OWN_HOLD_SEC = 4.0       # 내 번역 결과 유지 시간 (페이지가 많으면 그만큼 늘림)
 HUD_PAGE_SEC = 2.0           # 긴 내 번역 결과의 페이지 전환 간격
+CAPTION_HOLD_SEC = 3.0      # 확정 자막 최소 유지 시간 (긴 문장은 최대 10초)
+CAPTION_PARTIAL_TIMEOUT = 8.0
+FACE_LOST_SEC = 0.45        # 짧은 얼굴 검출 누락 허용, 이후 고정 자막
+CAPTION_HISTORY_LIMIT = 200 # 실행 중 메모리에 보관할 확정 발화 수
 
 # 카메라 시야(110도) 중 디스플레이가 실제로 덮는 영역의 비율.
 # 얼굴이 이 영역 밖이면 말풍선 대신 방향 화살표를 띄웁니다.

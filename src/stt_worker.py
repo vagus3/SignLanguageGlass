@@ -25,6 +25,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config as C
+from src import clock
+from src.caption_state import CaptionEvent
 
 BACKENDS = ("sherpa", "vosk")
 
@@ -179,17 +181,26 @@ class SttWorker(threading.Thread):
         ("partial", "안녕하세")   말하는 중 (계속 덮어쓰기)
         ("final",   "안녕하세요") 발화 확정
         ("error",   "...")        패키지·모델 없음 등
+
+    caption_events=True이면 partial/final/cancel의 두 번째 값은 CaptionEvent.
+    오류와 기본 호출 모드는 기존 문자열 계약을 유지합니다. observed_at은
+    인식 결과 생성 시각이며 음성 시작/종료 시각이나 화자 식별 결과가 아닙니다.
     """
 
     daemon = True
 
-    def __init__(self, out_queue=None, device=None, use_vad=True, gate=None, backend=None):
+    def __init__(self, out_queue=None, device=None, use_vad=True, gate=None, backend=None,
+                 caption_events=False):
         super().__init__(name="stt")
         self.out = out_queue or queue.Queue()
         self.device = device
         self.use_vad = use_vad
         self.backend = backend or C.STT_BACKEND
         self.gate = gate            # AudioGate: TTS 재생 중 입력 차단
+        self.caption_events = caption_events
+        self._utterance_id = 0
+        self._utterance_open = False
+        self._gate_interrupted = threading.Event()
         # ★ 이름을 _stop 으로 두면 안 됩니다.
         # threading.Thread 에는 _stop() 이라는 내부 메서드가 있고, join() 이
         # 스레드 종료를 확인한 뒤 그걸 호출합니다. Event 로 덮어쓰면
@@ -210,6 +221,17 @@ class SttWorker(threading.Thread):
             return VoskDecoder(use_vad=self.use_vad)
         return open_decoder(self.backend)
 
+    def _publish(self, kind, text):
+        if not self.caption_events:
+            self.out.put((kind, text))
+            return
+        if not self._utterance_open:
+            self._utterance_id += 1
+            self._utterance_open = True
+        self.out.put((kind, CaptionEvent(kind, text, self._utterance_id, clock.now())))
+        if kind in ("final", "cancel"):
+            self._utterance_open = False
+
     # ------------------------------------------------------------------
     def run(self):
         try:
@@ -226,6 +248,7 @@ class SttWorker(threading.Thread):
             # TTS 중 받은 자기 소리를 애초에 큐에 넣지 않습니다. 재생이 끝난 뒤
             # 밀린 블록이 STT로 흘러가 에코 자막이 되는 경로도 차단합니다.
             if self.gate is not None and not self.gate.is_open():
+                self._gate_interrupted.set()
                 return
             try:
                 self._audio.put_nowait(bytes(indata))
@@ -243,6 +266,21 @@ class SttWorker(threading.Thread):
                                    dtype="int16", channels=1,
                                    device=self.device, callback=cb):
                 while not self._quit.is_set():
+                    # Check even without incoming audio: the callback drops audio
+                    # while TTS plays, so waiting for a block leaves stale partials.
+                    if (self._gate_interrupted.is_set() or
+                            (self.gate is not None and not self.gate.is_open())):
+                        self._gate_interrupted.clear()
+                        decoder.reset()
+                        while not self._audio.empty():
+                            try:
+                                self._audio.get_nowait()
+                            except queue.Empty:
+                                break
+                        if self.caption_events and self._utterance_open:
+                            self._publish("cancel", "")
+                        self._quit.wait(0.02)
+                        continue
                     try:
                         data = self._audio.get(timeout=0.3)
                     except queue.Empty:
@@ -251,9 +289,10 @@ class SttWorker(threading.Thread):
                     # 인식기도 리셋해서 반쯤 들어간 자기 음성을 버립니다.
                     if self.gate is not None and not self.gate.is_open():
                         decoder.reset()
+                        self._gate_interrupted.set()
                         continue
-                    for event in decoder.feed(data):
-                        self.out.put(event)
+                    for kind, text in decoder.feed(data):
+                        self._publish(kind, text)
         except Exception as e:
             self.out.put(("error", str(e)))
 
