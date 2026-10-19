@@ -361,6 +361,7 @@ tools/
   evaluate_segments.py   자동 구간 평가: 경계 지연·잘림·분할·오검출
   send_pose.py           포즈 시퀀스 파일/더미 데이터 서버 전송 및 응답 테스트
   soak.py                HTTP 무인 소크 (장애 주입, 발화 감사, 메모리·스레드)
+  profile_pipeline.py    느린 노트북 진단: 카메라 실제 초당 장수, 단계별 처리 시간
 
 tests/
   run_all.py           전체 테스트 실행 (pytest 불필요)

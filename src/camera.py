@@ -23,6 +23,10 @@ def open_camera(verbose=True, camera_index=None):
     if not cap.isOpened():
         return None
 
+    # 압축 형식은 크기보다 먼저 정해야 DirectShow 가 받아들입니다. macOS(AVFoundation)는
+    # 이 설정을 쓰지 않습니다. 카메라가 거절하면 드라이버 기본 형식으로 남습니다.
+    if C.CAM_FOURCC and not C.IS_MAC:
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*C.CAM_FOURCC))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, C.CAM_W)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, C.CAM_H)
     cap.set(cv2.CAP_PROP_FPS, C.CAM_FPS)
@@ -34,8 +38,17 @@ def open_camera(verbose=True, camera_index=None):
     if verbose:
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        print(f"[camera {index}] {w}x{h}")
+        print(f"[camera {index}] {w}x{h} {fourcc_name(cap.get(cv2.CAP_PROP_FOURCC))} "
+              f"(드라이버 보고 {cap.get(cv2.CAP_PROP_FPS):.0f}fps; 실제 초당 장수는 "
+              f"tools/profile_pipeline.py --camera 로 확인)")
     return cap
+
+
+def fourcc_name(value):
+    """CAP_PROP_FOURCC 숫자 -> 'MJPG' 같은 네 글자. 읽을 수 없으면 '?'."""
+    code = int(value)
+    text = "".join(chr((code >> 8 * i) & 0xFF) for i in range(4))
+    return text if code and text.isprintable() and text.strip() else "?"
 
 
 def _apply_manual_exposure(cap, cv2, verbose):

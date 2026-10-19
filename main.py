@@ -338,8 +338,8 @@ def main():
     a = ap.parse_args()
     if a.recognize == "device" and not a.onnx:
         ap.error("--recognize device 에는 --onnx 가 필요합니다")
-    if a.sign_backend == "cloud" and not a.no_sign and a.cloud_controls == "keyboard":
-        a.debug = True  # SPACE needs a visible OpenCV event window.
+    keyboard_cloud = (a.sign_backend == "cloud" and not a.no_sign
+                      and a.cloud_controls == "keyboard")
 
     import cv2
     from src.hud import HudContent, HudRenderer, load_calib
@@ -442,7 +442,14 @@ def main():
     if video_enabled:
         from src.video_overlay import VideoOverlay
         overlay = VideoOverlay()
+    # SPACE/c need one focused OpenCV window. The caption, HUD or transcript window is
+    # enough; only without them open the debug camera view (one more full-size imshow
+    # per frame, which a slow laptop feels).
+    if keyboard_cloud and not (video_enabled or a.transcript
+                               or getattr(display, "has_window", False)):
+        a.debug = True
     camera_frame = None
+    black = None
     camera_frame_at = float("-inf")
     displayed_caption = None
     mouse_actions = queue.Queue()
@@ -512,9 +519,12 @@ def main():
                     else:
                         pending_word_t = payload["word_t"]
                 if a.debug:
-                    v = payload["frame"].copy()
-                    if C.MIRROR_PREVIEW:
-                        v = cv2.flip(v, 1)
+                    v = payload["frame"]
+                    if v.shape[1] > C.DEBUG_PREVIEW_W:     # smaller window, cheaper to draw
+                        scale = C.DEBUG_PREVIEW_W / v.shape[1]
+                        v = cv2.resize(v, (C.DEBUG_PREVIEW_W, int(v.shape[0] * scale)),
+                                       interpolation=cv2.INTER_AREA)
+                    v = cv2.flip(v, 1) if C.MIRROR_PREVIEW else v.copy()
                     txt = (f"{payload['fps']:.0f}fps  "
                            f"win {payload['in_fps']:.0f}fps  "
                            f"vis {payload['ms_vision']:.0f}ms  "
@@ -627,16 +637,24 @@ def main():
                        else content.frame(face_xy, last_size))
             with stats.span("display"):
                 display.show(img)
-                if overlay is not None and now - last_video_draw >= 1.0 / 30:
+                if overlay is not None and now - last_video_draw >= 1.0 / C.VIDEO_OVERLAY_FPS:
                     if camera_frame is None:
                         import numpy as np
                         camera_frame = np.zeros((C.CAM_H, C.CAM_W, 3), dtype=np.uint8)
-                    background = (camera_frame if now - camera_frame_at <= 1.0
-                                  else camera_frame * 0)
-                    video = overlay.render(background, captions, track, now,
-                                           mirror=C.MIRROR_PREVIEW and not separate_face,
-                                           tracks=faces.tracks(now), manual=faces.manual,
-                                           selected_id=faces.selected_id)
+                    if now - camera_frame_at <= 1.0:
+                        background = camera_frame
+                    else:                    # stale camera: never show an old person
+                        if black is None or black.shape != camera_frame.shape:
+                            import numpy as np
+                            black = np.zeros_like(camera_frame)
+                        background = black
+                    with stats.span("video_overlay"):
+                        video = overlay.render(background, captions, track, now,
+                                               mirror=C.MIRROR_PREVIEW and not separate_face,
+                                               tracks=faces.tracks(now), manual=faces.manual,
+                                               selected_id=faces.selected_id)
+                    if recorder is not None and not a.debug:
+                        draw_segment_overlay(cv2, video, recorder, segmenter)
                     if not gate.is_open():
                         cv2.putText(video, "MIC MUTED (TTS)", (16, 80),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)

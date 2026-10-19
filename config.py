@@ -99,6 +99,11 @@ CAM_W, CAM_H = 1280, 720
 CAM_FPS = 30
 MODEL_COMPLEXITY = 0    # 0 = 가장 빠름. 수어 인식엔 충분합니다
 MIRROR_PREVIEW = True   # 프리뷰만 좌우 반전(셀피 뷰). 좌표 계산에는 영향 없음
+DEBUG_PREVIEW_W = 960   # 디버그 카메라 창 최대 폭. 큰 창은 매 프레임 그리기가 비쌉니다
+VIDEO_OVERLAY_FPS = 30  # 말풍선 영상 창을 다시 그리는 최대 횟수(초당)
+# 카메라 압축 형식. 많은 노트북 카메라가 압축 없이(YUY2)는 1280x720 을 초당
+# 10장까지만 보냅니다. MJPG 를 요청하면 보통 30장. 안 맞는 카메라는 None.
+CAM_FOURCC = "MJPG"
 # 수어 카메라 시점. "webcam" = 노트북 웹캠 정면(시연), "glasses" = 안경 1인칭(어깨가 잘림).
 # --auto-segment 규칙이 달라집니다. main.py --viewpoint 로 바꿀 수 있습니다.
 SIGN_VIEWPOINT = "webcam"
@@ -129,6 +134,7 @@ AUDIO_BLOCK = 4000      # vosk 권장 블록
 VAD_AGGRESSIVENESS = 2  # 0(관대) ~ 3(엄격)
 STT_ENDPOINT_MS = 600   # 이만큼 무음이 이어지면 발화 종료로 보고 확정
 STT_BACKEND = "sherpa"   # "sherpa" | "vosk". tools/compare_stt.py 로 같은 녹음 비교
+STT_THREADS = 2         # 음성 인식이 쓰는 CPU 스레드. 느린 노트북에서 1 이면 영상 처리와 덜 다툽니다
 TTS_VOICE = "ko-KR-SunHiNeural"   # edge-tts 캐시 생성용
 
 # 반이중(half-duplex) 게이트

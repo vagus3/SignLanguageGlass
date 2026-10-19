@@ -13,6 +13,22 @@ Git에는 올리지 않습니다.
 - 서버가 뜨면 `curl -H "Authorization: Bearer $SIGN_SERVER_TOKEN" $SIGN_SERVER_URL/health`로
   확인합니다. 볼 값은 `recognizer_ready`, `device_model_ready`, `data_sources`입니다.
 
+## 0-1. 시연 노트북이 느리거나 끊길 때
+
+창을 띄우지 않고 어디가 느린지 숫자로 봅니다.
+
+~~~bash
+python tools/profile_pipeline.py --camera 0 --compare-formats --out reports/profile.json
+~~~
+
+- 카메라가 실제로 초당 몇 장을 주는지 나옵니다. 압축 형식 MJPG를 요청했을 때와 드라이버 기본일 때를 비교합니다.
+- 단계별 처리 시간과 "vision max fps"가 나옵니다.
+- 결과에 맞춰 할 일도 출력합니다.
+  - 카메라가 느리면: 조명을 밝게 하고, USB 본체 포트를 씁니다.
+  - CPU가 느리면: 전원을 연결하고, 윈도우 전원 모드를 "최고 성능"으로 바꾸고, 브라우저를 닫고, `config.STT_THREADS = 1`로 줄입니다.
+- MJPG가 오히려 안 되는 카메라라면 `config.CAM_FOURCC = None`으로 되돌립니다.
+- 실제 실행 중 단계별 시간은 `python main.py ... --stats`로 봅니다. `video_overlay`, `holistic`, `capture` 항목을 확인하세요.
+
 ## 1. 의미 검수
 
 검수할 문장은 지금 시연 어휘(`config.VOCAB`, 한국어 단어 글로스)로 만듭니다. 검수 파일은 모두

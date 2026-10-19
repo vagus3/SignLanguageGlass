@@ -122,13 +122,13 @@ class SherpaDecoder:
 
     name = "sherpa"
 
-    def __init__(self, model_dir=None, rate=None, threads=2):
+    def __init__(self, model_dir=None, rate=None, threads=None):
         import sherpa_onnx
         f = transducer_files(model_dir or C.SHERPA_MODEL)
         self.rate = rate or C.AUDIO_RATE
         self.rec = sherpa_onnx.OnlineRecognizer.from_transducer(
             tokens=str(f["tokens"]), encoder=str(f["encoder"]), decoder=str(f["decoder"]),
-            joiner=str(f["joiner"]), num_threads=threads, sample_rate=self.rate,
+            joiner=str(f["joiner"]), num_threads=threads or C.STT_THREADS, sample_rate=self.rate,
             feature_dim=80, decoding_method="greedy_search", enable_endpoint_detection=True,
             # rule1: 아무 말 없이 2.4초, rule2: 말한 뒤 무음이 STT_ENDPOINT_MS, rule3: 20초
             rule1_min_trailing_silence=2.4,
