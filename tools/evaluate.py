@@ -18,9 +18,8 @@
     이상해집니다. **배포하는 바로 그 파일을 재는 것**이 이 스크립트의 목적입니다.
 
 ■ sklearn 을 안 씁니다
-    지표를 전부 numpy 로 계산합니다. requirements.txt 만 깔린 환경
-    (= 안경에 올라가는 그 환경) 에서 그대로 돌아가야 하기 때문입니다.
-    라즈베리파이에서도 바로 실행됩니다.
+    지표를 전부 numpy 로 계산합니다. requirements.txt 만 설치한 실행 환경에서
+    그대로 돌아가도록 추가 분석 패키지에 의존하지 않습니다.
 """
 import sys
 import json
@@ -35,7 +34,7 @@ import config as C
 from src.landmarks import FEATURE_DIM
 
 
-# ------------------------------------------------------------------ 데이터
+# 데이터
 def load_dataset(seq_len, feat_dim):
     """data/raw/{라벨}/{촬영자}__{세션}_{번호}.npy 를 전부 읽습니다."""
     from src.dataset_contract import ensure_dataset_contract, signer_from_stem
@@ -117,7 +116,7 @@ def split(X, y, groups, mode, holdout, seed, test_size=0.25):
     return te, "시퀀스 단위 ★ 과대평가된 숫자입니다", warn
 
 
-# ------------------------------------------------------------------ 지표
+# 지표
 def confusion(y_true, y_pred, k):
     cm = np.zeros((k, k), np.int64)
     np.add.at(cm, (y_true, y_pred), 1)
@@ -221,7 +220,7 @@ def report(y_true, y_pred, conf, labels):
     return acc, cm
 
 
-# ------------------------------------------------------------------ main
+# main
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("model", nargs="?", default=None,

@@ -29,7 +29,7 @@ KEYPOINT_HINT = ("hand_left_keypoints", "hand_right_keypoints",
 MORPH_HINT = ("metaData", "attributes", "sign_script", "start", "end")
 
 
-# ------------------------------------------------------------------ 유틸
+# 유틸
 def human(n):
     for u in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024:
@@ -83,7 +83,7 @@ def classify_json(path):
         return kind, None
 
 
-# ------------------------------------------------------------------ 스캔
+# 스캔
 def scan(root):
     root = Path(root)
     if not root.exists():
@@ -131,7 +131,7 @@ def guess_views(paths, root):
     return tokens
 
 
-# ------------------------------------------------------------------ 리포트
+# 리포트
 def report(root, videos, jsons, others, total_bytes, want_manifest):
     line = "=" * 62
     print(f"\n{line}\n  AI Hub 수어 데이터셋 스캔 결과\n{line}")
@@ -145,7 +145,7 @@ def report(root, videos, jsons, others, total_bytes, want_manifest):
     if not videos and not jsons:
         raise SystemExit("\n영상도 JSON 도 없습니다. 경로를 다시 확인하세요.")
 
-    # ---------------- 각도 ----------------
+    # 각도
     print(f"\n── 1. 각도(view) ──────────────────────────────────")
     tk = guess_views(videos or jsons, root)
     if tk:
@@ -159,7 +159,7 @@ def report(root, videos, jsons, others, total_bytes, want_manifest):
         print("  경로에서 각도 토큰을 못 찾았습니다.")
         print("  폴더 구조를 직접 확인해 각도가 나뉘어 있는지 보세요.")
 
-    # ---------------- JSON 종류 ----------------
+    # JSON 종류
     print(f"\n── 2. JSON 종류 ───────────────────────────────────")
     kinds = Counter()
     samples = {}
@@ -175,7 +175,7 @@ def report(root, videos, jsons, others, total_bytes, want_manifest):
         print(f"\n  [{k}] 예시 구조  ({p.relative_to(root)})")
         print(schema(obj, depth=2, max_depth=7))
 
-    # ---------------- 키포인트 형식 검증 ----------------
+    # 키포인트 형식 검증
     print(f"\n── 3. 키포인트 형식 ───────────────────────────────")
     if "keypoint" in samples:
         _, obj = samples["keypoint"]
@@ -203,7 +203,7 @@ def report(root, videos, jsons, others, total_bytes, want_manifest):
         print("  키포인트 JSON 이 표본에 없습니다. 영상만 받으셨다면")
         print("  MediaPipe 로 직접 추출해야 합니다 (재추출 경로).")
 
-    # ---------------- 어휘 분포 ----------------
+    # 어휘 분포
     print(f"\n── 4. 어휘 분포 ───────────────────────────────────")
     vocab = Counter()
     signers = set()
@@ -238,7 +238,7 @@ def report(root, videos, jsons, others, total_bytes, want_manifest):
         print(f"\n  촬영자 후보 {len(signers)}명: {sorted(signers)[:10]}")
         print("  화자 단위 평가(GroupSplit)가 가능합니다. 반드시 이걸로 측정하세요.")
 
-    # ---------------- 영상 속성 ----------------
+    # 영상 속성
     if videos:
         print(f"\n── 5. 영상 속성 (표본 5개) ────────────────────────")
         try:

@@ -30,7 +30,7 @@ import config as C
 from src.landmarks import FEATURE_DIM, FEATURE_VERSION, N_FLAGS
 
 
-# ------------------------------------------------------------------ 데이터
+# 데이터
 def load_dataset():
     """파일명 {촬영자}__{세션}_{번호}.npy 에서 촬영자 ID도 읽습니다."""
     from src.dataset_contract import ensure_dataset_contract, signer_from_stem
@@ -68,7 +68,7 @@ def load_dataset():
             np.array(groups), labels)
 
 
-# ------------------------------------------------------------------ 증강
+# 증강
 def augment(X, y, times, rng):
     """
     작은 데이터셋에서 일반화를 살리는 3가지.
@@ -107,7 +107,7 @@ def augment(X, y, times, rng):
     return np.concatenate(Xs), np.concatenate(ys)
 
 
-# ------------------------------------------------------------------ 모델
+# 모델
 def build_model(n_classes):
     """TensorFlow/tf2onnx의 protobuf 충돌을 피하는 PyTorch LSTM."""
     import torch.nn as nn
@@ -243,7 +243,7 @@ def export_models(model, pt_path, onnx_path):
     return max_err
 
 
-# ------------------------------------------------------------------ main
+# main
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--epochs", type=int, default=200)

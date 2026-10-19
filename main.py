@@ -60,7 +60,7 @@ def draw_segment_overlay(cv2, frame, recorder, segmenter):
     cv2.putText(frame, mode + state, (w - 200, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
 
 
-# ---------------------------------------------------------------- 비전 스레드
+# 비전 스레드
 class VisionThread(threading.Thread):
     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
                  segment_recorder=None, pose_3d=False, segmenter=None, segment_events=None,
@@ -292,7 +292,7 @@ def speak(sentence, tts, stats=None, word_t=0.0, show=None):
         tts.say(sentence, origin_t=word_t)
 
 
-# ---------------------------------------------------------------- main
+# main
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-stt", action="store_true")

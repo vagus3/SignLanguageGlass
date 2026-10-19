@@ -22,7 +22,7 @@ import argparse
 from pathlib import Path
 
 
-# ---------------------------------------------------------------- 판별
+# 판별
 def detect(p: Path):
     if p.is_dir():
         return "savedmodel" if (p / "saved_model.pb").exists() else "dir"
@@ -81,7 +81,7 @@ def summary(in_dim, out_dim):
     print("         변환해두면 실행 환경은 onnxruntime 하나로 끝납니다.")
 
 
-# ---------------------------------------------------------------- ONNX
+# ONNX
 def show_onnx(p):
     import onnxruntime as ort
     sess = ort.InferenceSession(str(p), providers=["CPUExecutionProvider"])
@@ -111,7 +111,7 @@ def show_onnx(p):
     summary(in_dim, out_dim)
 
 
-# ---------------------------------------------------------------- Keras / TF
+# Keras / TF
 def show_keras(p):
     import os
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
@@ -161,7 +161,7 @@ def show_tflite(p):
             int(outd[0]["shape"][-1]) if outd else None)
 
 
-# ---------------------------------------------------------------- PyTorch
+# PyTorch
 def infer_io_torch(sd):
     in_dim = out_dim = None
     hidden = layers = 0
@@ -246,7 +246,7 @@ def show_torch(p):
     summary(in_dim, out_dim)
 
 
-# ---------------------------------------------------------------- main
+# main
 DISPATCH = {"onnx": show_onnx, "keras": show_keras, "savedmodel": show_savedmodel,
             "tflite": show_tflite, "torch": show_torch}
 

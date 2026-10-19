@@ -6,7 +6,6 @@
     python tools/demo.py --record demo.mp4      # 발표용 영상으로 저장
     python tools/demo.py --scenario my.json
     python tools/demo.py --no-audio             # 소리 없이 화면만
-    python tools/demo.py --display pi           # 실물 OLED 로
 
 ■ 왜 필요한가
     라이브 데모는 터집니다. 조명이 다르고, 카메라가 안 잡히고, 긴장해서

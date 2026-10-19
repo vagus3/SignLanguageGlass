@@ -1,4 +1,9 @@
-# 좌표 기반 연속 수어 번역
+# 현재 구현: 좌표 기반 연속 수어 번역
+
+이 문서는 **현재 CTC + 텍스트 언어 모델 기준선**의 실행 절차다. 현재 클라이언트는
+노트북이며 Pi·Arduino/Pico를 필수로 사용하지 않는다. 개발 목표인 Qwen2.5-VL-7B/72B는
+아직 연결되지 않았으며, VLM 입력·서빙 경로를 별도로 구현해야 한다.
+전체 방향과 OLED 별도 미리보기의 역할은 [README](README.md#현재-개발-방향)를 따른다.
 
 장치는 MediaPipe 좌표를 추출하고, 서버는 CTC로 단어열을 인식한 뒤 vLLM으로
 한국어 문장을 생성합니다. vLLM은 언어 모델 서빙 엔진이며 좌표 인식 모델은
@@ -27,7 +32,7 @@ SPACE=녹화 시작/종료, c=취소, q=종료입니다. 모의 결과는 HUD와
 보낼 수 있습니다. 물리 버튼은 같은 동작을 호출하도록 연결하면 됩니다.
 
 ~~~bash
-python main.py --sign-backend cloud --cloud-controls stdin --display pi --fixed-caption
+python main.py --sign-backend cloud --cloud-controls stdin --display null --fixed-caption
 python tools/send_pose.py data/processed/continuous/clip_000000.npz
 ~~~
 

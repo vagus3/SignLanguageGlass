@@ -1,29 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-디스플레이 백엔드
+"""OLED 미리보기와 이전 물리 디스플레이 출력 경로.
 
-PC 에는 I2C/SPI 포트가 없습니다. 명세서의 "Python에서 I2C 제어 코드"는
-라즈베리파이 기준이고, PC 직결 구조에서는 반드시 브리지 MCU 가 필요합니다.
-
-    PC ──USB(시리얼)──▶ 아두이노/Pico ──SPI──▶ SSD1306/1309 OLED
-
-I2C 가 아니라 SPI 를 쓰는 이유: 128x64 는 프레임당 1KB 인데
-I2C 400kHz 로는 파이썬 오버헤드까지 합쳐 15~25fps 가 한계입니다.
-SPI 8MHz 면 여유롭습니다.
-
-백엔드 4종 (config.DISPLAY_BACKEND 로 선택)
-    preview : PC 창에 6배 확대   -> 하드웨어 0원, Step 1~2 전체를 여기서 검증
-    serial  : PC + 브리지 MCU 경유 실제 OLED
-    pi      : 라즈베리파이 GPIO 직결 (브리지 MCU 불필요)
-    null    : 출력 없음
-
-■ 라즈베리파이를 쓰면 브리지가 사라집니다
-    위 구조가 필요한 이유는 "PC 에 SPI 포트가 없어서" 하나뿐입니다.
-    라즈베리파이는 GPIO 에 SPI/I2C 가 있으므로 OLED 를 직접 물리면 됩니다.
-
-        Pi ──SPI(GPIO)──▶ SSD1306/1309 OLED
-
-    아두이노도, 시리얼 프로토콜도, 펌웨어도 필요 없어집니다.
+현재 기본 출력은 노트북의 미리보기 창입니다. serial/pi 백엔드는 예전
+하드웨어 실험을 위해 남겨 두었습니다.
 """
 import sys
 import queue
@@ -154,27 +133,9 @@ class SerialDisplay:
 
 
 class PiDisplay:
-    """
+    """이전 Raspberry Pi GPIO 출력 경로."""
 
     has_window = False
-    라즈베리파이 GPIO 직결 (luma.oled).
-
-        pip install luma.oled
-        sudo raspi-config  ->  Interface Options  ->  SPI 활성화
-
-    배선 (SPI)
-        OLED          Pi 40핀
-        GND           GND      (6번)
-        VCC           3V3      (1번)
-        SCL/D0(CLK)   GPIO11 SCLK (23번)
-        SDA/D1(MOSI)  GPIO10 MOSI (19번)
-        RES           GPIO25      (22번)
-        DC            GPIO24      (18번)
-        CS            GPIO8  CE0  (24번)
-
-    ※ I2C 모듈을 쓸 거면 i2c=True 로. 다만 128x64 는 프레임당 1KB 라
-      I2C 400kHz 로는 15~25fps 가 한계입니다. SPI 를 권합니다.
-    """
 
     def __init__(self, i2c=False, rotate=0):
         from luma.oled.device import ssd1306

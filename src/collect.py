@@ -123,7 +123,7 @@ def main():
         label = C.VOCAB[li]
         now = clock.now()
 
-        # ---------------- 상태 머신 ----------------
+        # 상태 머신
         if state == "countdown":
             left = 3.0 - (now - t_state)
             if left <= 0:
@@ -156,7 +156,7 @@ def main():
                       f"원본 {len(buf)}프레임/{elapsed:.2f}초 ({actual_fps:.1f}fps)")
                 state = "idle"
 
-        # ---------------- HUD ----------------
+        # HUD
         done = count_of(label)
         color = (0, 255, 0) if done >= C.SEQ_PER_LABEL else (255, 255, 255)
         put(view, f"[{li + 1}/{len(C.VOCAB)}]  {label}", (20, 40), color, 0.9, 2)

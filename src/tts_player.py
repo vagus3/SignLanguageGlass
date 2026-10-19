@@ -43,7 +43,6 @@ class TtsPlayer(threading.Thread):
         if preload:
             self._preload()
 
-    # ------------------------------------------------------------------
     def _preload(self):
         """시작 시 전부 메모리에 올려 디스크 I/O 지연도 제거합니다."""
         try:
@@ -90,7 +89,6 @@ class TtsPlayer(threading.Thread):
             return item
         return item, 0.0, 0.0
 
-    # ------------------------------------------------------------------
     def run(self):
         while not self._quit.is_set():
             item = self.q.get()

@@ -232,7 +232,6 @@ class SttWorker(threading.Thread):
         if kind in ("final", "cancel"):
             self._utterance_open = False
 
-    # ------------------------------------------------------------------
     def run(self):
         try:
             import sounddevice as sd

@@ -63,7 +63,6 @@ class SignRuntime:
         if warmup:
             self._warmup()
 
-    # ------------------------------------------------------------------
     def _load_spec(self):
         """모델 옆의 *_preproc.json 을 읽습니다. 전처리 사양의 단일 출처."""
         for cand in (self.path.with_name(self.path.stem + "_preproc.json"),
@@ -148,7 +147,6 @@ class SignRuntime:
         except Exception as e:
             print(f"[runtime] 워밍업 실패: {e}")
 
-    # ------------------------------------------------------------------
     def predict(self, x):
         """x: (1, seq, dim) float32 -> (classes,) 확률."""
         x = np.asarray(x, np.float32)

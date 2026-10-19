@@ -3,17 +3,21 @@
 목표: 2인 팀이 60~90초 양방향 대화를 안정적으로 보여주고, 문제가 생겨도 핵심 기능을
 잃지 않은 채 즉시 폴백한다.
 
+현재 시연 장치는 **노트북**이고 서버는 클라우드에 둔다. Pi·Arduino/Pico와 실제 OLED
+배선을 시연의 필수 조건으로 두지 않는다. `preview`는 보존된 OLED 별도 미리보기 창이며,
+영상 말풍선과 기록 창은 함께 사용할 수 있다. 아래 cloud 명령은 현재 CTC 기준선용으로,
+도입 예정인 Qwen2.5-VL의 연결·품질 검증을 대신하지 않는다.
+
 ## 시연 모드 결정
 
 새 기능을 삭제하지 않고, 실측 결과로 당일 기본 모드만 정한다.
 
 | 우선순위 | 조건 | 실행 명령 |
 |---|---|---|
-| A. 전체 기능 | 손·얼굴 검출률 각각 90% 이상, 15분 소크 통과 | `python main.py --sign-camera 0 --face-camera 1 --display serial --stats reports/live.csv` |
-| B. 한 카메라 | 한 화면에서 손·얼굴 90% 이상, 처리량 충분 | `python main.py --display serial --stats reports/live.csv` |
-| C. 안정형 | 얼굴 카메라 또는 AR 정렬 불안정 | `python main.py --fixed-caption --display serial --stats reports/live.csv` |
+| A. 노트북 기본 | 손·얼굴 검출률과 실제 번역 품질, 15분 소크 검증 | `python main.py --sign-backend cloud --auto-segment --viewpoint webcam --display preview --video-captions --transcript --stats reports/live.csv` |
+| B. 두 카메라 비교 | 한 카메라로 손·얼굴을 함께 담기 어려울 때만 | `python main.py --sign-backend cloud --sign-camera 0 --face-camera 1 --display preview --video-captions --transcript --stats reports/live.csv` |
+| C. 안정형 | 얼굴 추적 또는 말풍선 위치 불안정 | `python main.py --sign-backend cloud --fixed-caption --display preview --stats reports/live.csv` |
 | D. 녹화 폴백 | 라이브 장치 복구가 30초를 넘음 | 같은 장치로 미리 찍은 무편집 60~90초 영상 재생 |
-| E. 노트북 웹캠 연속 번역 | 안경 장치 대신 노트북 한 대로 시연 | 아래 "노트북 웹캠 시연" 절 |
 
 모드 A/B의 얼굴 앵커가 흔들려도 음성 자막 자체는 유지된다. 카메라가 전부 실패하면 모드 C는
 `--no-sign --fixed-caption`으로 음성→자막만 계속 시연할 수 있다.

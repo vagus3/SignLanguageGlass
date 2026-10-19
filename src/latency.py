@@ -185,7 +185,6 @@ class LatencyTracker:
         """clock.now() 로 잰 시작 시각 t0 부터의 경과를 기록 (time.time() 과 섞지 않음)."""
         self.add(name, (clock.now() - t0) * 1000.0)
 
-    # ------------------------------------------------------------------
     def details(self):
         """{이름: {count, max, p50, p95, exact, recent_n, recent_p50, recent_p95}}
 

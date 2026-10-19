@@ -1,23 +1,41 @@
 # signglass — 청각장애인 양방향 소통 스마트글래스
 
-수어와 음성 사이를 **양방향으로** 잇는 안경형 장치입니다.
+수어와 음성 사이를 **양방향으로** 잇는 스마트글래스 프로젝트입니다.
+현재는 **노트북 클라이언트 + 클라우드 서버**로 기능을 검증하고, 휴대폰 연동을 다음 단계로 검토합니다.
 
 | 방향 | 이름 | 하는 일 |
 |---|---|---|
-| 착용자 → 상대방 | **Phase 1** | 수어를 인식해 안경 스피커로 **음성** 출력 |
+| 착용자 → 상대방 | **Phase 1** | 수어를 한국어 문장으로 변환하고 TTS로 **음성** 출력 |
 | 상대방 → 착용자 | **Phase 2** | 상대의 말을 받아써서 상대 얼굴 옆에 **AR 말풍선** |
 
 두 방향이 동시에 돌아가고, 서로의 소리가 되먹임되지 않도록 반이중 게이트가 사이에 있습니다.
 
-**실행 경로 두 가지:**
+## 현재 개발 방향
 
-- **기준 경로 (개발 목표):** `--sign-backend cloud`. 문장 단위 관절 좌표를 서버로 보내 CTC 연속
+| 구분 | 방향과 구현 상태 |
+|---|---|
+| 현재 클라이언트 | 노트북의 카메라·마이크·스피커 사용. STT, 얼굴 추적, 영상 말풍선, 대화 기록, OLED 별도 미리보기 실행 |
+| 수어 번역 목표 | 클라우드에서 **Qwen2.5-VL-7B-Instruct 또는 72B-Instruct** 활용 예정. 아직 VLM 입력·추론 경로는 연결하지 않음 |
+| 현재 서버 구현 | 좌표 → CTC 글로스 인식 → 검수 문장 또는 텍스트 언어 모델(vLLM). 현재 기본 텍스트 모델은 `Qwen/Qwen2.5-7B-Instruct`이며 VLM과 다름 |
+| 음성 출력 | 현재 WAV 캐시 + OS 내장 음성. 자유 생성 문장용 TTS 엔진은 선정·연결 예정 |
+| 다음 클라이언트 | 휴대폰 연동 검토. 현재 Python/OpenCV 앱이 휴대폰에서 실행된다는 의미는 아님 |
+| OLED | `HUD (OLED simulation)` 별도 창을 유지. 실제 안경 디스플레이의 구동 인터페이스·광학계는 미확정 |
+| Pi·Arduino·Pico | **현재 구성·구매·시연의 전제에서 제외.** 관련 코드는 이전 하드웨어 실험 경로로 보존 |
+
+목표 흐름은 **수어 입력 → 클라우드 VLM → 확정 한국어 문장 → TTS → 상대방에게 음성 전달**입니다.
+반대 방향은 **상대방 음성 → 로컬 STT → 얼굴 추적 말풍선·대화 기록**입니다.
+VLM용 영상/프레임 입력과 JSON 보조 정보의 구성은 별도 설계가 필요하며, 현재 좌표 API에
+모델 이름만 바꿔 VLM 연동이 완료되는 구조는 아닙니다.
+
+**현재 코드에서 실행할 수 있는 수어 경로:**
+
+- **클라우드 기준선:** `--sign-backend cloud`. 문장 단위 관절 좌표를 서버로 보내 CTC 연속
   수어 인식 후 문장을 만듭니다. 문장은 검수 문장 → 언어 모델(vLLM) 순으로 만들고, 실패하면
   미리보기만 표시합니다.
 - **시연 대안:** `--sign-backend local`(현재 CLI 기본값). 고립 단어 ONNX 분류와 규칙 문장 조합입니다.
   데이터 확보가 늦어질 때 쓰는 대안이며, 이 경로로 시연할 때는 시연 범위를 따로 밝힙니다.
 
-기본값은 서버/장치 인식 비교(A/B)와 시연 목적에 따라 정합니다. 데이터 규격·학습·모의 서버·GPU
+CLI 기본값은 아직 `local`이며, 클라우드 경로는 옵션으로 선택합니다. 데이터 규격·학습·모의 서버·GPU
 실행·자동 발화 검증은 [CLOUD_SETUP.md](CLOUD_SETUP.md)를 참고하세요. 실제 연속 수어 데이터와
 모델이 아직 없어 번역 성능은 검증되지 않았습니다.
 
@@ -31,21 +49,21 @@
 |---|---|
 | 소스 모듈·회귀 테스트 | ✅ **53개 전원 통과** (PyTorch→ONNX, CTC·모의 클라우드 통합, HTTP 무인 소크, 얼굴 추적 및 말풍선 UI, 3D 손 특징, 자동 구간 검증 포함). CI 자동 실행(`.github/workflows/tests.yml`); 실기기 관통 테스트 미완료 — 직접 할 테스트는 [`TEST_CHECKLIST.md`](TEST_CHECKLIST.md) |
 | 얼굴 추적 AR 말풍선 & 대화 기록 | ✅ 실시간 카메라 영상 위 AR 말풍선 오버레이, 1:1 공간 ID 추적 및 클릭 기반 화자 수동 선택, 최근 200개 대화 기록 탐색 창(`--transcript`, H/J/K/L) 구현 완료 |
-| 클라우드 연속 번역 | 🟡 좌표 학습·API·vLLM 연동, 기기 인식 비교 경로(B, `--recognize device`)와 A/B 측정 도구 구현; 실제 문장 데이터·GPU 모델·번역 품질 검증 필요 |
+| 클라우드 수어 번역 | 🟡 CTC+텍스트 언어 모델 기준선과 A/B 측정 도구 구현. Qwen2.5-VL은 도입 예정이며 실제 문장 데이터·GPU 모델·번역 품질 검증 필요 |
 | 3D 방향·자동 구간·특징 비교 | 🟡 3D 손바닥 방향/손목 깊이 분기, 손 움직임 자동 구간(`--auto-segment`), 노트북 정면/안경 시점 분기(`--viewpoint`), 특징 구성 비교 도구(`tools/compare_features.py`) 구현 |
 | 학습 의존성 | ✅ PyTorch 2.4.1 / ONNX 1.16.2 / onnxruntime 1.19.2 / scikit-learn 1.5.2 설치 확인 |
 | 학습된 모델 `models/sign_lstm.onnx` | ❌ 없음 — 수어 단어 데이터 수집 및 학습 필요 |
 | 직접 수집한 데이터 `data/raw/**/*.npy` | ❌ 0개 |
 | AI Hub 샘플 | 🟡 3D 변환 완료: 100클립→21시퀀스/20동작 그룹; 한국어 뜻 매핑·추가 화자 필요 (`data/processed/aihub3d`) |
 | 한국어 STT | ✅ 기본 sherpa-onnx 스트리밍 Zipformer(`models/sherpa-ko-174m-chunk32/`) 준비 완료. 비교 모델(`sherpa-ko-2024-06-16/`, `models/vosk-ko/`) 및 합성음성 22문장 무결성 검증 완료 |
-| TTS 캐시 `assets/tts_cache/*.wav` | ✅ macOS 22개 wav 및 manifest.json (16kHz PCM 모노, 무음 아님 확인) |
+| TTS | 🟡 macOS 22개 WAV 캐시 및 OS 음성 fallback 구현. 새 문장용 TTS 모델·API 연결 예정 |
 | 한글 픽셀 폰트 `assets/fonts/Galmuri11.ttf` | ✅ Galmuri v2.40.4 + LICENSE.txt 설치 확인 |
-| 하드웨어 (OLED / 광학계) | ❌ 미착수 (소프트웨어 에뮬레이션 `--display preview`로 검증 가능) |
+| 실제 안경 디스플레이·휴대폰 연동 | 🟡 OLED 소프트웨어 미리보기 유지. 실물 디스플레이 구동·광학 정렬과 휴대폰 클라이언트는 미구현 |
 
-가장 먼저 검증할 것은 모델 크기가 아니라 **실제 장착 위치에서 손 검출률과 얼굴 검출률이
-각각 충분한가**입니다. 기본 한 카메라, `--face-camera`를 쓰는 하향 손/전방 얼굴 두 카메라,
-카메라가 전혀 필요 없는 `--fixed-caption`까지 같은 코드에 유지합니다. 2주차 실측으로 최종
-장착 구성을 고르되, 얼굴 AR 목표를 미리 버리지는 않습니다.
+현재 시연은 노트북 웹캠과 내장 오디오를 기준으로 진행합니다. 먼저 수어 입력부터 문장·음성
+출력까지와 STT부터 말풍선까지의 경로를 검증하고, 실제 안경 장착은 디스플레이 연결 방식과
+손·얼굴 검출률을 측정한 뒤 진행합니다. 두 카메라(`--face-camera`)는 필요할 때 비교하는
+선택 경로이며, `--fixed-caption`은 얼굴 추적 없는 자막 대안으로 유지합니다.
 
 2명·12주 기준 권장 범위, 주차별 게이트, 평가 지표는
 [`PROJECT_REVIEW.md`](PROJECT_REVIEW.md)에 정리했습니다.
@@ -57,25 +75,29 @@ vLLM·클라우드 구조 평가, 성능·리팩토링 목록, LLM 학습 판단
 
 ---
 
-## 시스템 아키텍처
+## 현재 구현 아키텍처
 
 `signglass`는 GUI와 디스플레이 출력을 담당하는 메인 스레드와 비전·STT·TTS·클라우드 통신을 전담하는 백그라운드 워커 스레드로 분리되어 있습니다.
-MediaPipe와 ONNX는 C++ 구간에서 Python GIL을 해제하므로 멀티코어 환경에서 완전한 병렬 처리가 가능합니다.
+MediaPipe와 ONNX의 네이티브 연산은 일부 병렬 실행이 가능하지만 실제 처리량은 장치에서 측정해야 합니다.
+아래 그림은 **현재 구현된 CTC 기준선과 노트북 UI**입니다. 도입 예정인 Qwen2.5-VL과
+휴대폰 클라이언트, 미확정인 실물 OLED 연결을 구현 완료된 구성으로 표시하지 않습니다.
 
 ### 1. 전체 시스템 구조 및 스레드 데이터 흐름
 
 ```mermaid
 flowchart TB
     subgraph Capture["📷 캡처 & 센서 입력"]
-        Cam1["수어 카메라 (하향/정면)"]
-        Cam2["얼굴 카메라 (전방, 선택)"]
-        Mic["안경 마이크"]
+        Cam1["노트북 수어 카메라 (현재)"]
+        Cam2["추가 얼굴 카메라 (선택)"]
+        Mic["노트북 마이크"]
     end
 
     subgraph Threads["⚙️ 백그라운드 워커 스레드"]
         subgraph VisionTh["VisionThread (비전 워커)"]
             MP["MediaPipe Holistic / Hands"]
-            Norm["246차원 착용형 정규화"]
+            Norm["로컬 단어용 246차원 정규화"]
+            Pose["클라우드용 PoseSequence 2D/3D"]
+            VisionFaceDet["경량 얼굴 검출"]
             LocalInfer["SignPredictor (ONNX LSTM)"]
             Seg["ActivitySegmenter (손 움직임 감지)"]
         end
@@ -86,7 +108,7 @@ flowchart TB
 
         subgraph AudioTh["오디오 처리 워커"]
             STT["SttWorker (sherpa-onnx Zipformer)"]
-            TTS["TtsPlayer (캐시 WAV 재생)"]
+            TTS["TtsPlayer (WAV 캐시 / OS 음성)"]
             Gate{{"AudioGate\n(반이중 에코 억제)"}}
         end
 
@@ -105,30 +127,31 @@ flowchart TB
     end
 
     subgraph Output["👓 출력 장치 & UI"]
-        OLED["OLED 디스플레이 (SSD1306/SSD1309)"]
+        OLED["OLED 별도 미리보기 (preview)"]
         VidWin["영상 창 (실시간 AR 말풍선)"]
         TransWin["대화 기록 창 (H키)"]
-        Spk["안경 스피커"]
+        Spk["노트북 스피커"]
     end
 
-    subgraph Server["☁️ 클라우드 서버 (FastAPI)"]
+    subgraph Server["☁️ 현재 클라우드 기준선 (FastAPI)"]
         CTC["CTC 연속 수어 인식"]
-        LLM["번역 모듈 (검수문장 / vLLM)"]
+        LLM["검수 문장 / 텍스트 LLM (vLLM)"]
     end
 
     %% 파이프라인 연결
     Cam1 --> MP --> Norm
     Norm --> LocalInfer
-    Norm --> Seg
+    MP --> Pose --> Seg
+    Cam1 --> VisionFaceDet
     Cam2 --> FaceDet
 
     Mic --> Gate
     Gate -->|음성 스트림| STT
-    STT -->|partial / final 이벤트| CapState
+    STT -->|partial / final / cancel| CapState
 
     LocalInfer -->|단어 확정| Phrase["PhraseBuilder"]
-    Phrase -->|발화 지시| Gate
-    Gate -->|재생 중 마이크 뮤트| TTS
+    Phrase -->|발화 지시| TTS
+    TTS -.->|재생 중 마이크 입력 차단| Gate
     TTS --> Spk
 
     Seg -->|문장 구간| Client
@@ -136,10 +159,10 @@ flowchart TB
     Server --> CTC --> LLM
 
     FaceDet --> Tracker
-    MP -.->|얼굴 바운딩 박스| Tracker
+    VisionFaceDet -->|얼굴 바운딩 박스| Tracker
     Tracker --> CapState
     CapState --> TxtLayout --> HUD & Overlay
-    CapState --> TransView
+    CapState -->|확정 문장| History["CaptionHistory"] --> TransView
 
     HUD --> OLED
     Overlay --> VidWin
@@ -152,7 +175,8 @@ flowchart TB
 
 ### 2. Phase 1 — 수어 → 음성 (착용자 → 상대방)
 
-수어 인식을 거쳐 안경 스피커로 합성 음성을 출력하는 파이프라인입니다. 로컬 단어 인식 경로와 클라우드 연속 수어 번역 경로를 모두 지원합니다.
+현재 구현은 로컬 단어 인식 또는 클라우드 CTC 기준선의 결과를 노트북 스피커로 출력합니다.
+Qwen2.5-VL 도입 시 수어 입력·서버 추론 경로를 추가하고, 확정 문장을 TTS에 전달하도록 확장합니다.
 
 ```mermaid
 flowchart LR
@@ -172,18 +196,18 @@ flowchart LR
         Builder["PhraseBuilder\n(단어열 문장 조합 및 지연 발화)"]
     end
 
-    subgraph CloudPath["Cloud 인식 경로 (--sign-backend cloud)"]
+    subgraph CloudPath["현재 Cloud 기준선 (--sign-backend cloud)"]
         AutoSeg["손 움직임 자동 구간\n(--auto-segment / SPACE)"]
         PoseSeq["PoseSequence (2D/3D)"]
         CloudSrv["SignServer (FastAPI)"]
         CTC["CTC 연속 수어 인식\n(또는 기기 ONNX 인식)"]
-        Trans["번역 엔진\n(검수 문장 → vLLM)"]
+        Trans["문장 생성\n(검수 문장 / 텍스트 LLM)"]
     end
 
     subgraph AudioOut["음성 출력"]
-        TTS["TtsPlayer (사전 생성 WAV 재생, 지연 0ms)"]
+        TTS["TtsPlayer (WAV 캐시 / OS 음성)"]
         Gate{{"AudioGate (반이중 게이트)"}}
-        Spk["안경 스피커"]
+        Spk["노트북 스피커"]
     end
 
     Hand --> MP --> Extract
@@ -207,7 +231,8 @@ flowchart LR
    - 손 움직임 기반 자동 구간 분할(`ActivitySegmenter`) 또는 키 입력(SPACE)으로 발화 구간 검출.
    - 시퀀스 좌표 전송 후 CTC 모델 디코딩 및 언어 모델(vLLM) 기반 자연어 문장 생성.
 4. **TTS 출력 (`src/tts_player.py`)**:
-   - 미리 생성된 고품질 16kHz WAV 캐시를 비동기 재생 (지연 0ms).
+   - 미리 생성한 16kHz WAV 캐시를 비동기 재생하며, 캐시에 없으면 OS 음성으로 대체.
+   - 캐시는 합성 대기를 줄이지만 큐·재생 장치 지연은 남습니다. 자유 생성 문장용 TTS 엔진은 후속 작업입니다.
 
 ---
 
@@ -218,7 +243,7 @@ flowchart LR
 ```mermaid
 flowchart TD
     subgraph Audio["음성 인식 (STT)"]
-        Mic["상대방 음성 (안경 마이크)"]
+        Mic["상대방 음성 (노트북 마이크)"]
         Gate{{"AudioGate\n(스피커 출력 중 마이크 뮤트)"}}
         Sherpa["SttWorker (sherpa-onnx Zipformer 스트리밍)\npartial(말하는 중) / final(발화 확정)"]
     end
@@ -227,7 +252,7 @@ flowchart TD
         Cam["전방 카메라 영상"]
         Det["경량 얼굴 검출 (FaceDetection)"]
         Track["FaceTracker (src/face_tracker.py)\n• 1:1 공간 ID 매핑\n• 마우스 클릭 수동 화자 선택\n• 0.45초 검출 누락 유예"]
-        Smooth["OneEuroFilter\n(지연 없는 좌표 떨림 보정)"]
+        Smooth["OneEuroFilter\n(좌표 떨림 완화)"]
     end
 
     subgraph Layout["자막 수명 & 레이아웃 관리"]
@@ -237,7 +262,7 @@ flowchart TD
     end
 
     subgraph Display["다중 디스플레이 출력"]
-        OLED["OLED HUD (SSD1306/SSD1309)\n• 얼굴 옆 말풍선 배치\n• 시야 밖 화살표 가이드\n• 하단 고정 자막 (--fixed-caption)"]
+        OLED["OLED 별도 미리보기 (preview)\n• 얼굴 옆 말풍선 배치\n• 시야 밖 화살표 가이드\n• 하단 고정 자막 (--fixed-caption)"]
         Video["VideoOverlay (웹캠 창)\n• 실제 카메라 영상 위 AR 말풍선\n• 화자 선택 박스 & 음성 인식 실시간 표시"]
         Transcript["TranscriptView (대화 기록 창)\n• H키 토글, J/K 스크롤, L 최신 복귀"]
     end
@@ -256,15 +281,15 @@ flowchart TD
    - `sherpa-onnx` Zipformer 스트리밍으로 상대방 말을 즉각 텍스트화 (`partial` 중간 결과 및 `final` 확정 이벤트).
    - 착용자가 수어로 말하여 TTS가 출력되는 동안에는 `AudioGate`가 마이크를 차단하여 자막 루프(에코) 방지.
 2. **공간 얼굴 추적 (`src/face_tracker.py`)**:
-   - 얼굴 검출 결과에 공간 추적 ID를 부여하여 발화 시작 시점의 화자와 1:1 바인딩.
-   - 마우스 좌클릭으로 대화 상대를 직접 선택 가능하며, `OneEuroFilter`로 조준 떨림을 지연 없이 제거.
+   - 얼굴 검출 결과에 공간 추적 ID를 부여하여 첫 인식 결과 시각의 선택 대상에 자막 연결.
+   - 마우스 좌클릭으로 대화 상대를 선택하며, `OneEuroFilter`로 위치 떨림을 완화. 실제 발화자 자동 판별은 미구현.
 3. **자막 수명 & 레이아웃 (`src/caption_state.py`, `src/text_layout.py`)**:
    - 발화 중에는 실시간 갱신, 발화 종료 후 문장 길이에 따라 3~10초간 말풍선 유지.
    - 화면 폭에 맞춘 자동 개행 및 최대 3줄 표시.
 4. **다양한 출력 경로**:
-   - **OLED HUD**: `HudRenderer`를 거쳐 128×64 SSD1306/SSD1309 디스플레이에 렌더링.
+   - **OLED 별도 미리보기**: `HudRenderer`를 거쳐 `HUD (OLED simulation)` 창에 표시. 내 번역과 상대 자막의 두 영역 유지.
    - **비디오 오버레이**: 웹캠 영상 창 위에 AR 말풍선과 화자 추적 박스를 오버레이 (`--video-captions`).
-   - **대화 기록 창**: 터미널 단축키 `H`로 전체 대화 기록 창을 열어 스크롤 탐색 가능 (`--transcript`).
+   - **대화 기록 창**: OpenCV 창에 포커스를 두고 `H`로 기록 창을 열어 스크롤 탐색 (`--transcript`).
 
 ---
 
@@ -284,7 +309,7 @@ src/
   features_v2.py       AI Hub(OpenPose) ↔ MediaPipe 공통 부분집합, 101차원 (레거시)
   hand_shape3d.py      AI Hub 3D ↔ MediaPipe Hands world 공통 손 모양, 462차원
   hud.py             ★ 좌표변환 + 말풍선 렌더 + SSD1306 패킹 + 표시 내용 선택(HudContent)
-  oled_bridge.py       디스플레이 백엔드 (preview / serial / pi / null)
+  oled_bridge.py       preview / null + 이전 실물 연결 코드(serial / pi, 현재 미사용)
   stt_worker.py        스트리밍 STT 스레드 (sherpa-onnx 기본, vosk 대체)
   tts_player.py        비동기 TTS 재생 워커
   audio_gate.py        반이중 게이트 (스피커 출력 중 마이크 뮤트, 에코 루프 차단)
@@ -307,7 +332,7 @@ src/
   face_tracker.py    ★ 다중 얼굴 검출, 1:1 공간 ID 추적 및 화자 선택
   caption_state.py   ★ 자막 수명 주기(홀드/만료/얼굴 연결) 상태 머신
   caption_history.py   최근 200개 확정 대화 기록 메모리 보관
-  text_layout.py       화면 폭 맞춤 한글 자동 줄바꿈 및 말풍선 박스 계산
+  text_layout.py       한글 폰트 로딩·화면 폭 맞춤 줄바꿈
   video_overlay.py   ★ 카메라 영상 위 실시간 AR 말풍선·얼굴 테두리 렌더링
   transcript_view.py   OpenCV 기반 대화 기록 GUI 창 (H키 토글, J/K 스크롤)
   calibrate.py         시차(parallax) 보정 도구
@@ -342,7 +367,7 @@ tests/
   test_*.py            회귀 테스트 53종 (전원 통과)
 
 firmware/
-  oled_bridge.ino      PC 구조에서만 필요한 USB↔SPI 브리지 펌웨어
+  oled_bridge.ino      이전 USB↔SPI 브리지 펌웨어 (현재 구성에서 미사용, 보존)
 ```
 
 ```bash
@@ -351,44 +376,40 @@ python tests/run_all.py -v       # 출력까지
 python tests/run_all.py adaptive # 이름으로 골라서
 ```
 
-테스트는 `pytest` 없이 표준 라이브러리만으로 돕니다. `requirements.txt`만 깔린
-환경(= 안경에 올라가는 그 환경)에서 그대로 돌려야 하기 때문입니다.
+테스트 실행기는 `pytest` 없이 표준 라이브러리로 동작합니다. 개별 테스트는 실행·학습·서버
+의존성이 필요하며, 일부 선택 의존성이 없으면 건너뜁니다. 현재 기준 환경은 개발 노트북입니다.
 각 테스트는 독립 프로세스로 실행됩니다 — 여러 테스트가 `config`를 임시로
 갈아끼우기 때문에 한 프로세스에서 몰아 돌리면 서로 오염됩니다.
 
 ---
 
-## 실행 구조 두 가지
+## 실행 구성과 이전 하드웨어 경로
 
-### A. PC + 브리지 MCU
-
-```
-노트북 ──USB 시리얼──▶ 아두이노/Pico ──SPI──▶ OLED
-(비전·STT·TTS 전부)      (그리기만)
-```
-
-PC에는 SPI 포트가 없어서 브리지가 필요합니다. 성능은 여유롭지만 안경이 노트북에 USB로 묶입니다.
-`--display serial` / `requirements.txt` / `firmware/oled_bridge.ino`
-
-### B. 라즈베리파이 온보드 (진짜 웨어러블)
+### 현재 구성: 노트북 + 클라우드
 
 ```
-Pi ──SPI(GPIO)──▶ OLED
-(전부 Pi 에서)
+노트북 카메라·마이크
+  ├─ 수어 입력 ──▶ 클라우드 서버 ──▶ 한국어 문장 ──▶ TTS·노트북 스피커
+  └─ STT + 얼굴 추적 ──▶ 영상 말풍선 / 대화 기록 / OLED 별도 미리보기
 ```
 
-**브리지 MCU도 펌웨어도 필요 없습니다.** `--display pi` / `requirements-pi.txt`
+실행 환경은 `requirements.txt`, 기본 디스플레이는 `--display preview`입니다.
+영상 말풍선만 보려면 `--display null --video-captions`로 선택할 수 있습니다.
+이 옵션은 OLED 미리보기 창을 숨길 뿐 관련 코드를 삭제하지 않습니다.
 
-> **⚠ Pi에서는 mediapipe 버전이 다릅니다.**
-> `mediapipe==0.10.21`은 Linux aarch64 휠이 **없어서** Pi에서 `pip install` 자체가 실패합니다.
-> `0.10.15`에는 aarch64 휠이 cp39~cp312로 있고, `solutions.holistic`이 삭제된 건 0.10.31부터라
-> 안전 구간입니다. `requirements-pi.txt`가 이걸 처리합니다.
->
-> **⚠ 프레임레이트가 떨어지면 조용히 무너집니다.**
-> 노트북 30fps로 학습한 모델을 Pi 10fps에서 돌리면 30프레임이 1초가 아니라 **3초**가 됩니다.
-> 같은 수어인데 모델이 보는 시간 축이 3배가 되고, 에러는 하나도 안 납니다.
-> `config.ADAPTIVE_WINDOW = True`(기본값)가 '최근 30프레임' 대신 **'최근 1.0초를 30개로
-> 리샘플'**해서 이걸 막습니다.
+휴대폰 연동은 다음 클라이언트 후보이며 아직 구현되지 않았습니다. 안경은 입력·표시 장치로
+연동하는 방향을 검토하고, VLM은 클라우드에서 실행합니다. 실제 OLED 패널은 별도 구동
+인터페이스가 필요하므로, 연결 방식을 확정하기 전 노트북·휴대폰에 바로 연결된다고 가정하지 않습니다.
+
+### 이전 하드웨어 경로: 코드만 보존, 현재 사용 계획 없음
+
+| 보존된 경로 | 관련 파일·옵션 | 현재 취급 |
+|---|---|---|
+| PC → Arduino/Pico → OLED | `--display serial`, `firmware/oled_bridge.ino` | 현재 구성·구매·시연에 포함하지 않음 |
+| Pi GPIO → OLED | `--display pi`, `requirements-pi.txt` | 현재 구성·구매·시연에 포함하지 않음 |
+
+이전 하드웨어 연결 코드와 OLED 별도 미리보기는 삭제하지 않습니다. 관련 설치·배선 절차는
+현재 팀원의 필수 준비 사항이 아니며, 실제 디스플레이 연결 방식이 결정되면 다시 검토합니다.
 
 ---
 
@@ -405,8 +426,8 @@ Pi ──SPI(GPIO)──▶ OLED
 | **3단 확정 (임계값+다수결+쿨다운)** | 한 번의 높은 신뢰도로 발화하면 손이 지나가기만 해도 말을 합니다 |
 | **NEUTRAL 클래스 필수** | 없으면 가만히 있어도 아무 단어나 뱉습니다. 전체 데이터의 20~25%를 여기에 |
 | **PhraseBuilder 지연 발화** | 즉시 발화하면 "이름" 뒤에 "이름이 뭐예요?"가 또 나와 두 번 들립니다 |
-| **TTS 사전 캐싱** | 어휘가 고정이라 wav를 미리 뽑아둘 수 있습니다. 지연 0ms · 인터넷 불필요 · 시연 실패 0 |
-| **반이중 게이트** | 스피커와 마이크가 안경테 위 몇 cm. 없으면 자기 말이 상대 자막으로 뜨고 무한 루프까지 갑니다 |
+| **TTS 사전 캐싱** | 고정 시연 문장은 WAV를 재사용해 합성 대기를 줄입니다. 자유 생성 문장은 동적 TTS가 필요하며, 재생 지연·실패 가능성은 별도 검증합니다 |
+| **반이중 게이트** | 노트북이나 안경에서 스피커 출력이 마이크로 다시 들어오는 자막 에코를 차단합니다 |
 | **local 인식 실행은 ONNX** | torch 200MB / TF 600MB vs onnxruntime 50MB. cloud 경로의 CTC·언어 모델은 서버에서 실행합니다 |
 | **One Euro Filter** | 이동평균은 부드럽게 할수록 지연이 그대로 늘어납니다. AR 오버레이 표준 |
 | **화자 단위 평가** | 시퀀스 단위로 섞으면 "97%인데 남이 하면 30%"가 나옵니다 |
@@ -518,17 +539,16 @@ python tools/evaluate.py --split group             # 배포하는 그 파일을 
 | `python main.py --sign-camera 0 --face-camera 1` | 하향 수어/전방 얼굴 두 카메라 통합 |
 | `python main.py --stats` | 지연을 구간별로 측정해 종료 시 p50/p95 출력 |
 | `python main.py --stats out.csv` | 위 + 원본 표본을 CSV로 (보고서 그래프용) |
-| `python main.py --display pi` | 라즈베리파이 GPIO 직결 OLED |
 | `python main.py --no-gate` | 반이중 해제 (유선 이어폰으로 들을 때만) |
 | `python tools/demo.py --record demo.mp4` | 데모 시나리오 재생·녹화 |
 | `python tools/check_mount.py --duration 30 --preview` | 장착 시점 손/얼굴 검출률 측정 |
 | `python tools/compare_features.py` | 특징 구성(2D/3D/정규화)별 손실 및 성능 비교 |
-| `python -m src.calibrate --display serial` | 실제 OLED 시차 보정 (Pi는 `--display pi`) |
-| `python -m src.hud` | 말풍선 레이아웃 미리보기 |
+| `python -m src.hud` | 보존된 OLED 말풍선 레이아웃 미리보기 |
 | `python tests/run_all.py` | 회귀 테스트 53종 전체 실행 |
 
-`DISPLAY_BACKEND = "preview"`면 **하드웨어 없이** HUD 레이아웃·좌표 매핑·가독성이
-전부 검증됩니다. Phase 1·2를 0원으로 끝낼 수 있는 지점입니다.
+`DISPLAY_BACKEND = "preview"`면 추가 디스플레이 하드웨어 없이 OLED 별도 미리보기를
+사용할 수 있습니다. 소프트웨어 레이아웃은 확인할 수 있지만 실제 광학 정렬·착용 가독성은
+실물 검증이 필요합니다. 클라우드 GPU·API 비용은 별도로 계산합니다.
 
 ### 카메라 영상 위 실시간 말풍선
 
@@ -546,7 +566,7 @@ python main.py --no-sign --display preview --no-video-captions
 `preview` 출력에서 얼굴 카메라를 사용하면 영상 말풍선 창도 기본 활성화됩니다.
 `--fixed-caption`은 카메라 없는 고정 자막 경로를 유지합니다. 별도 얼굴 카메라를
 쓰면 말풍선은 그 영상 위에 표시하며, 한 카메라에서는 미러링된 영상과 얼굴
-좌표를 함께 뒤집습니다. 실제 OLED는 기존 시야/광학 보정 좌표를 사용합니다.
+좌표를 함께 뒤집습니다. OLED 별도 미리보기는 기존 시야/광학 보정 좌표를 유지합니다.
 
 - 얼굴 한 명을 기준으로 공간 추적 ID를 만들고, 각 발화의 첫 인식 결과를
   해당 시각의 선택된 ID에 연결합니다. 처음부터 여러 얼굴이 보이면 하단 자막을
@@ -656,8 +676,5 @@ python tools/prepare_aihub3d.py data/raw/New_sample --out data/processed/aihub3d
   다릅니다. 새 장착 시점으로 수집하고, 모델의 `feature_version` 검사를 통과시켜야 합니다.
 - **시차 보정은 광학 결합기를 쓸 때만 의미가 있습니다.** 직시형이면 `calibrate.py`가
   사실상 놀게 됩니다.
-- **`--display serial`을 아두이노 Uno/Nano로 쓸 때**, 펌웨어는 프레임버퍼에 직접
-  수신하도록 되어 있어야 합니다(별도 1KB 버퍼를 두면 ATmega328P의 SRAM 2KB를 넘깁니다).
-  현재 `firmware/oled_bridge.ino`는 그렇게 되어 있습니다.
-- **광학용으로는 2.42인치 SSD1309를 권합니다.** 0.96인치와 같은 128×64·같은 드라이버라
-  **코드 변경이 전혀 없고**, 픽셀이 커서 광학 정렬이 훨씬 쉽고 밝습니다.
+- **실물 OLED 규격은 미확정입니다.** 현재 보존된 렌더러·패킹은 128×64 SSD1306/SSD1309
+  기준입니다. 다른 해상도·컨트롤러 패널은 드라이버·프레임버퍼 호환 확인이 필요합니다.

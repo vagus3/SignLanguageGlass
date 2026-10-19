@@ -54,7 +54,7 @@ FEATURE_DIM_V2 = DIM_HAND + DIM_BODY + 3   # 101
 _EPS = 1e-6
 
 
-# ================================================================ 정규화
+# 정규화
 def canon_hand(pts):
     """
     손 21x2 -> 손목 원점 + 크기 1 + 회전 정렬.
@@ -106,7 +106,7 @@ SLICE_HAND = slice(0, DIM_HAND)
 SLICE_BODY = slice(DIM_HAND, DIM_HAND + DIM_BODY)
 
 
-# ================================================ 입력 A: MediaPipe
+# 입력 A: MediaPipe
 def from_mediapipe(results):
     """Holistic 결과 -> 101차원. 추론 경로에서 사용."""
     def hand(lms):
@@ -132,7 +132,7 @@ def from_mediapipe(results):
     return assemble(lh, rh, body, valid)
 
 
-# ================================================ 입력 B: AI Hub JSON
+# 입력 B: AI Hub JSON
 def _triplets(flat):
     """OpenPose 의 [x,y,conf, x,y,conf, ...] -> (N,3)."""
     if not flat:
@@ -175,7 +175,7 @@ def from_openpose(person, conf_min=0.2):
     return assemble(lh, rh, body, valid)
 
 
-# ================================================ 시퀀스 리샘플
+# 시퀀스 리샘플
 def resample(seq, target_len=30):
     """
     가변 길이 시퀀스 -> 고정 길이. 선형 보간으로 균등 리샘플합니다.

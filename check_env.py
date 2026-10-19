@@ -46,7 +46,7 @@ def section(title):
     print(f"\n── {title} " + "─" * max(0, 50 - len(title)))
 
 
-# ---------------------------------------------------------------- 0. 시스템
+# 0. 시스템
 def check_python():
     section("0. 파이썬")
     v = sys.version_info
@@ -62,7 +62,7 @@ def check_python():
         )
 
 
-# ------------------------------------------------------- 1. 핵심 라이브러리
+# 1. 핵심 라이브러리
 def check_core():
     section("1. 핵심 라이브러리")
 
@@ -81,9 +81,6 @@ def check_core():
             )
     except ImportError:
         fail("numpy 없음", "pip install -r requirements.txt")
-        # ★ 예전에는 여기서 return 해서 아래 mediapipe/opencv 검사가
-        #   전부 생략됐습니다. numpy 가 없어도 나머지는 계속 검사합니다.
-        #   (mediapipe 는 numpy 를 필요로 하므로 아래에서 다시 실패로 잡힙니다)
 
     # mediapipe: solutions.holistic 존재 여부가 이 프로젝트의 생명줄
     try:
@@ -112,7 +109,7 @@ def check_core():
     except ImportError:
         fail("opencv 없음", "mediapipe 설치 시 자동으로 깔립니다. 설치 로그를 확인하세요")
 
-    # onnxruntime: 안경에서 실제로 모델을 돌리는 유일한 런타임
+    # ONNX 기반 로컬 인식 경로에서 사용합니다.
     try:
         import onnxruntime as ort
 
@@ -145,7 +142,7 @@ def check_core():
         warn("pillow 없음")
 
 
-# ------------------------------------------------------------- 2. 오디오 SW
+# 2. 오디오 SW
 def check_audio_libs():
     section("2. 오디오 / 음성 라이브러리")
 
@@ -188,12 +185,12 @@ def check_audio_libs():
     try:
         import serial  # noqa: F401
 
-        ok("pyserial (Step 2 OLED 브리지용)")
+        ok("pyserial (이전 OLED 브리지 경로용)")
     except ImportError:
-        warn("pyserial 없음 - Step 2 에서 필요")
+        warn("pyserial 없음 - 이전 OLED 브리지 경로에서만 필요")
 
 
-# --------------------------------------------------------- 3. 카메라 실측
+# 3. 카메라 실측
 def check_camera():
     section("3. 카메라 실측")
     try:
@@ -232,7 +229,7 @@ def check_camera():
         warn(f"{w}x{h} — 얼굴 위치 정밀도가 떨어질 수 있습니다 (Phase 2)")
 
 
-# ------------------------------------------------- 4. Holistic 추론 속도
+# 4. Holistic 추론 속도
 def check_holistic_speed():
     section("4. Holistic 추론 속도 (CPU)")
     try:
@@ -262,7 +259,7 @@ def check_holistic_speed():
         fail(f"Holistic 실행 실패: {e}")
 
 
-# ---------------------------------------------------------- 5. 마이크 실측
+# 5. 마이크 실측
 def check_mic():
     section("5. 마이크 실측 (2초 녹음)")
     try:
@@ -293,7 +290,7 @@ def check_mic():
         fail(f"마이크 테스트 실패: {e}")
 
 
-# ------------------------------------------------------- 6. 한국어 TTS
+# 6. 한국어 TTS
 def check_tts():
     section("6. 한국어 TTS")
     try:
@@ -320,7 +317,7 @@ def check_tts():
         warn(f"pyttsx3 실패: {e}", "edge-tts 사전 캐싱 방식으로 대체 가능합니다")
 
 
-# --------------------------------------------------------- 7. 실행 산출물
+# 7. 실행 산출물
 def check_artifacts():
     section("7. 전 구간 실행 산출물")
 
@@ -371,10 +368,10 @@ def check_artifacts():
         ok(f"HUD 한글 폰트: {C.HUD_FONT.name}")
     else:
         warn(f"HUD 픽셀 폰트 없음: {C.HUD_FONT}",
-             "실물 OLED 전에 한글 저해상도 폰트를 넣고 가독성을 확인하세요")
+             "assets/fonts/에 한글 폰트를 넣고 미리보기에서 가독성을 확인하세요")
 
 
-# ------------------------------------------------------------------ main
+# main
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--no-camera", action="store_true")

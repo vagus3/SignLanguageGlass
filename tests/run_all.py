@@ -6,8 +6,8 @@
     python tests/run_all.py -v          # 각 테스트의 출력까지 보기
     python tests/run_all.py adaptive    # 이름에 'adaptive' 가 들어간 것만
 
-pytest 를 쓰지 않습니다. requirements.txt 만 깔린 환경(= 안경에 올라가는 그
-환경)에서 그대로 돌아가야 하기 때문입니다. 라즈베리파이에서도 바로 됩니다.
+pytest 를 쓰지 않습니다. requirements.txt 만 설치한 실행 환경에서도
+그대로 돌아가야 하기 때문입니다.
 
 각 테스트는 독립 프로세스로 돌립니다. 여러 테스트가 config 를 임시로
 갈아끼우기 때문에(DATA_DIR, ADAPTIVE_WINDOW 등) 한 프로세스에서 몰아 돌리면

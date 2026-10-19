@@ -39,7 +39,7 @@ def report(a, b):
     return False
 
 
-# ---------------------------------------------------------------- Keras
+# Keras
 def from_keras(src, dst, seq_len, opset):
     import os
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
@@ -65,7 +65,7 @@ def from_keras(src, dst, seq_len, opset):
     return x, m.predict(x, verbose=0)
 
 
-# ---------------------------------------------------------------- PyTorch
+# PyTorch
 def load_torch_model(src, arch, in_dim, classes, trust_pickle=False):
     import torch
     import torch.nn as nn
@@ -146,7 +146,7 @@ def from_torch(src, dst, arch, in_dim, classes, seq_len, opset, trust_pickle=Fal
     return x.numpy(), ref.numpy()
 
 
-# ---------------------------------------------------------------- main
+# main
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src")

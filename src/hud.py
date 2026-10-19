@@ -28,7 +28,7 @@ import config as C
 from src import clock
 
 
-# ---------------------------------------------------------------- 캘리브레이션
+# 캘리브레이션
 _CALIB = {"offset": list(C.HUD_CALIB_OFFSET), "scale": list(C.HUD_CALIB_SCALE)}
 
 
@@ -58,7 +58,7 @@ def save_calib(offset, scale):
     load_calib()
 
 
-# ---------------------------------------------------------------- 좌표 변환
+# 좌표 변환
 def camera_to_hud(cx, cy, cam_w, cam_h):
     """
     카메라 픽셀 -> HUD 픽셀.
@@ -79,7 +79,7 @@ def camera_to_hud(cx, cy, cam_w, cam_h):
     return x, y, inside
 
 
-# ---------------------------------------------------------------- 렌더러
+# 렌더러
 class HudRenderer:
     # 같은 글·같은 위치면 매 프레임 다시 그리지 않습니다. 화면 한 장은 1KB 남짓입니다.
     CACHE_SIZE = 64
@@ -134,7 +134,6 @@ class HudRenderer:
               f"      갈무리(Galmuri11.ttf) 를 assets/fonts/ 에 넣으세요.")
         return ImageFont.load_default()
 
-    # ---------------------------------------------------------------
     def text_w(self, s):
         """문자열의 실제 픽셀 폭. 폰트를 못 읽었으면 대략값."""
         try:
@@ -313,7 +312,6 @@ class HudRenderer:
                     outline=1)
         return img
 
-    # ---------------------------------------------------------------
     @staticmethod
     def _tail(d, bx, bw, by, face_left):
         if face_left:
@@ -341,7 +339,7 @@ class HudRenderer:
                        (C.OLED_W // 2 + 5, h - 11)], fill=1)
 
 
-# ---------------------------------------------------------------- 표시 내용
+# 표시 내용
 class HudContent:
     """HUD 에 무엇을 띄울지 정합니다: 상대의 말, 내 번역 결과, 상태 한 줄.
 
@@ -421,7 +419,7 @@ class HudContent:
         return img
 
 
-# ------------------------------------------------------- SSD1306/1309 패킹
+# SSD1306/1309 패킹
 def pack_ssd1306(img):
     """
     PIL 1비트 이미지 -> SSD1306/1309 프레임버퍼 1024바이트
