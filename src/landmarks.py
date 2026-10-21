@@ -241,6 +241,33 @@ def detection_face_center_px(results, w, h):
             max(0.0, min(y, float(max(h - 1, 0)))))
 
 
+def make_preview_hands():
+    """Track hands even when the face or upper body is outside the frame."""
+    import mediapipe as mp
+
+    return mp.solutions.hands.Hands(
+        static_image_mode=False,
+        max_num_hands=2,
+        model_complexity=1,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+
+
+def draw_hand_preview(image, results):
+    """Draw only detected hand joints in the original, unmirrored image space."""
+    import mediapipe as mp
+
+    drawing = mp.solutions.drawing_utils
+    for hand in results.multi_hand_landmarks or []:
+        drawing.draw_landmarks(
+            image, hand, mp.solutions.hands.HAND_CONNECTIONS,
+            drawing.DrawingSpec(color=(0, 255, 255), thickness=2, circle_radius=4),
+            drawing.DrawingSpec(color=(0, 210, 0), thickness=2),
+        )
+    return image
+
+
 def draw_debug(image, results):
     """수집/디버그용 오버레이."""
     import mediapipe as mp

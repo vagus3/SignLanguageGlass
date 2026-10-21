@@ -64,12 +64,13 @@ def draw_segment_overlay(cv2, frame, recorder, segmenter):
 class VisionThread(threading.Thread):
     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
                  segment_recorder=None, pose_3d=False, segmenter=None, segment_events=None,
-                 track_face=True):
+                 track_face=True, preview_hands=False):
         # daemon 을 클래스 속성으로 두면 Thread.daemon 프로퍼티를 가려서
         # 내부 _daemonic 플래그와 어긋납니다. 생성자로 넘겨야 안전합니다.
         super().__init__(name="vision", daemon=True)
         self.out = out_q
         self.enable_sign = enable_sign
+        self.preview_hands = preview_hands
         self.camera_index = camera_index
         self.segment_recorder = segment_recorder
         self.pose_3d = pose_3d
@@ -98,11 +99,11 @@ class VisionThread(threading.Thread):
             self.out.put(("error", "카메라를 열 수 없습니다"))
             return
 
-        holistic = face_detector = None
+        holistic = face_detector = hand_detector = None
         try:
             holistic = (L.make_holistic(C.MODEL_COMPLEXITY)
                         if self.enable_sign or self.segment_recorder is not None else None)
-            face_detector = None
+            hand_detector = L.make_preview_hands() if self.preview_hands else None
             if self.track_face:
                 import mediapipe as mp
                 face_detector = mp.solutions.face_detection.FaceDetection(
@@ -136,10 +137,17 @@ class VisionThread(threading.Thread):
                 t_hol = clock.now()
                 if holistic is not None:
                     st.add("holistic", (t_hol - t_cap) * 1000)
+
+                # 손 미리보기는 Holistic과 별도로 처리합니다.
+                hand_res = hand_detector.process(rgb) if hand_detector is not None else None
+                if hand_res is not None:
+                    L.draw_hand_preview(frame, hand_res)
+
+                t_face = clock.now()
                 face_boxes = (L.detection_face_boxes_px(face_detector.process(rgb), w, h)
                               if face_detector is not None else [])
                 if face_detector is not None:
-                    st.add("face_detection", (clock.now() - t_hol) * 1000)
+                    st.add("face_detection", (clock.now() - t_face) * 1000)
                 self.ms_vision = (clock.now() - t0) * 1000
 
                 # Capture every processed frame before the lossy preview queue.
@@ -185,6 +193,7 @@ class VisionThread(threading.Thread):
                 self._emit(("frame", {
                     "frame": frame, "face": face, "word": word,
                     "face_boxes": face_boxes, "captured_at": t_cap,
+                    "hand_count": len(getattr(hand_res, "multi_hand_landmarks", None) or []),
                     "word_t": word_t,
                     "size": (w, h), "fps": self.fps,
                     "in_fps": getattr(predictor, "last_fps", 0.0),
@@ -202,6 +211,8 @@ class VisionThread(threading.Thread):
                 holistic.close()
             if face_detector is not None:
                 face_detector.close()
+            if hand_detector is not None:
+                hand_detector.close()
 
     def _emit(self, item):
         """큐를 쌓지 않고 항상 최신 프레임만 유지."""
@@ -405,7 +416,8 @@ def main():
     vision = (VisionThread(vq, enable_sign=not a.no_sign and cloud is None, stats=stats,
                            camera_index=sign_index, segment_recorder=recorder,
                            pose_3d=a.pose_3d, segmenter=segmenter, segment_events=commands,
-                           track_face=not a.fixed_caption and not separate_face)
+                           track_face=not a.fixed_caption and not separate_face,
+                           preview_hands=a.debug)
               if need_vision else None)
     if vision:
         vision.start()
@@ -529,7 +541,8 @@ def main():
                            f"win {payload['in_fps']:.0f}fps  "
                            f"vis {payload['ms_vision']:.0f}ms  "
                            f"inf {payload['ms_infer']:.0f}ms  "
-                           f"{payload['raw']} {payload['conf']:.2f}")
+                           f"{payload['raw']} {payload['conf']:.2f}  "
+                           f"Hands: {payload['hand_count']}/2")
                     cv2.putText(v, txt, (16, 36), cv2.FONT_HERSHEY_SIMPLEX,
                                 0.7, (0, 255, 0), 2)
                     if not gate.is_open():
