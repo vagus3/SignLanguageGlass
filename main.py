@@ -21,6 +21,7 @@ import sys
 import time
 import queue
 import argparse
+import math
 import threading
 from pathlib import Path
 
@@ -333,6 +334,10 @@ def main():
                     help="수어/기본 카메라 번호 (기본: config.CAM_INDEX)")
     ap.add_argument("--face-camera", type=int, default=None, metavar="INDEX",
                     help="선택형 전방 얼굴 카메라 번호 (두 카메라 구성)")
+    ap.add_argument("--exposure", type=float, default=None, metavar="VALUE",
+                    help="카메라 수동 노출 (Windows: 기본 -8, 밝으면 -9, 어두우면 -7/-6)")
+    ap.add_argument("--gain", type=float, default=None, metavar="VALUE",
+                    help="카메라 수동 게인 (과노출이면 0부터 시도, 지원 범위는 장치마다 다름)")
     ap.add_argument("--display", default=None,
                     choices=["preview", "serial", "pi", "null"])
     ap.add_argument("--debug", action="store_true", help="카메라 뷰도 함께 표시")
@@ -347,8 +352,19 @@ def main():
                     help="지연을 구간별로 측정해 종료 시 p50/p95 를 출력합니다. "
                          "경로를 주면 실행 전체의 원본 표본을 CSV 로 계속 기록합니다.")
     a = ap.parse_args()
+    for name in ("exposure", "gain"):
+        value = getattr(a, name)
+        if value is not None and not math.isfinite(value):
+            ap.error(f"--{name} 에는 유한한 숫자가 필요합니다")
     if a.recognize == "device" and not a.onnx:
         ap.error("--recognize device 에는 --onnx 가 필요합니다")
+    # 스레드 시작 전에 공용 설정에 반영해 두 카메라 및 재연결에도 적용합니다.
+    if a.exposure is not None or a.gain is not None:
+        C.CAM_MANUAL_EXPOSURE = True
+    if a.exposure is not None:
+        C.CAM_EXPOSURE = a.exposure
+    if a.gain is not None:
+        C.CAM_GAIN = a.gain
     keyboard_cloud = (a.sign_backend == "cloud" and not a.no_sign
                       and a.cloud_controls == "keyboard")
 

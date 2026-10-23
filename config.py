@@ -116,7 +116,7 @@ SEGMENT_REST_RATIO = 1.0
 # MediaPipe 가 손가락 관절을 놓칩니다. 셔터를 고정하고 조명으로 밝기를 메우세요.
 # ※ macOS AVFoundation 은 OpenCV 노출 제어를 대부분 무시합니다(정상). 아래 참고.
 CAM_MANUAL_EXPOSURE = True
-CAM_EXPOSURE = -6       # 값이 작을수록 빠른 셔터. -5 ~ -8 사이에서 찾으세요
+CAM_EXPOSURE = -8       # Windows: 과노출 억제 시작값. 어두우면 -7/-6, 밝으면 -9
 CAM_GAIN = None         # None = 건드리지 않음. 어두우면 100~200 시도
 
 def camera_backend():

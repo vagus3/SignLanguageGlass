@@ -530,6 +530,7 @@ python tools/evaluate.py --split group             # 배포하는 그 파일을 
 | 명령 | 용도 |
 |---|---|
 | `python main.py --debug` | 통합 실행 + 카메라 뷰 |
+| `python main.py --debug --exposure -8 --gain 0` | 과노출 조절 (Windows, 수동 노출·게인) |
 | `python main.py --video-captions --transcript` | 카메라 영상 위 실시간 AR 말풍선 + 대화 기록 탐색 창 |
 | `python main.py --sign-backend cloud --auto-segment` | 클라우드 연속 수어 번역 (손 움직임 자동 구간 분할) |
 | `python main.py --sign-backend cloud --viewpoint webcam` | 노트북 정면 웹캠 시점 자동 구간 규칙 (손 내리면 문장 종료) |
@@ -550,6 +551,13 @@ python tools/evaluate.py --split group             # 배포하는 그 파일을 
 `DISPLAY_BACKEND = "preview"`면 추가 디스플레이 하드웨어 없이 OLED 별도 미리보기를
 사용할 수 있습니다. 소프트웨어 레이아웃은 확인할 수 있지만 실제 광학 정렬·착용 가독성은
 실물 검증이 필요합니다. 클라우드 GPU·API 비용은 별도로 계산합니다.
+
+카메라가 하얗게 날아가면 Windows에서 `python main.py --debug --exposure -8 --gain 0`으로
+확인하세요. 여전히 밝으면 `--exposure -9`, 너무 어두우면 `--exposure -7` 또는 `-6`으로
+조절합니다. 기본 노출은 `config.py`의 `CAM_EXPOSURE = -8`이며, CLI 설정은 해당 실행의
+수어·얼굴 카메라와 재연결에 적용됩니다. 게인 지원 범위는 장치마다 다릅니다.
+`적용 확인 실패`가 출력되면 드라이버 설정에서 직접 조절하세요. 노출값의 단위는
+백엔드마다 다르므로 이 음수 예시는 Windows DirectShow용입니다.
 
 ### 카메라 영상 위 실시간 말풍선
 

@@ -1,0 +1,2143 @@
+﻿diff --git a/CLOUD_SETUP.md b/CLOUD_SETUP.md
+index 8df8cca..8577064 100644
+--- a/CLOUD_SETUP.md
++++ b/CLOUD_SETUP.md
+@@ -1,4 +1,9 @@
+-# 醫뚰몴 湲곕컲 ?곗냽 ?섏뼱 踰덉뿭
++# ?꾩옱 援ы쁽: 醫뚰몴 湲곕컲 ?곗냽 ?섏뼱 踰덉뿭
++
++??臾몄꽌??**?꾩옱 CTC + ?띿뒪???몄뼱 紐⑤뜽 湲곗???*???ㅽ뻾 ?덉감?? ?꾩옱 ?대씪?댁뼵?몃뒗
++?명듃遺곸씠硫?Pi쨌Arduino/Pico瑜??꾩닔濡??ъ슜?섏? ?딅뒗?? 媛쒕컻 紐⑺몴??Qwen2.5-VL-7B/72B??+?꾩쭅 ?곌껐?섏? ?딆븯?쇰ŉ, VLM ?낅젰쨌?쒕튃 寃쎈줈瑜?蹂꾨룄濡?援ы쁽?댁빞 ?쒕떎.
++?꾩껜 諛⑺뼢怨?OLED 蹂꾨룄 誘몃━蹂닿린????븷? [README](README.md#?꾩옱-媛쒕컻-諛⑺뼢)瑜??곕Ⅸ??
+ 
+ ?μ튂??MediaPipe 醫뚰몴瑜?異붿텧?섍퀬, ?쒕쾭??CTC濡??⑥뼱?댁쓣 ?몄떇????vLLM?쇰줈
+ ?쒓뎅??臾몄옣???앹꽦?⑸땲?? vLLM? ?몄뼱 紐⑤뜽 ?쒕튃 ?붿쭊?대ŉ 醫뚰몴 ?몄떇 紐⑤뜽?
+@@ -27,7 +32,7 @@ SPACE=?뱁솕 ?쒖옉/醫낅즺, c=痍⑥냼, q=醫낅즺?낅땲?? 紐⑥쓽 寃곌낵??HUD?
+ 蹂대궪 ???덉뒿?덈떎. 臾쇰━ 踰꾪듉? 媛숈? ?숈옉???몄텧?섎룄濡??곌껐?섎㈃ ?⑸땲??
+ 
+ ~~~bash
+-python main.py --sign-backend cloud --cloud-controls stdin --display pi --fixed-caption
++python main.py --sign-backend cloud --cloud-controls stdin --display null --fixed-caption
+ python tools/send_pose.py data/processed/continuous/clip_000000.npz
+ ~~~
+ 
+diff --git a/DEMO_RUNBOOK.md b/DEMO_RUNBOOK.md
+index f3c3eb0..c3283dc 100644
+--- a/DEMO_RUNBOOK.md
++++ b/DEMO_RUNBOOK.md
+@@ -3,17 +3,21 @@
+ 紐⑺몴: 2?????60~90珥??묐갑????붾? ?덉젙?곸쑝濡?蹂댁뿬二쇨퀬, 臾몄젣媛 ?앷꺼???듭떖 湲곕뒫?? ?껋? ?딆? 梨?利됱떆 ?대갚?쒕떎.
+ 
++?꾩옱 ?쒖뿰 ?μ튂??**?명듃遺?*?닿퀬 ?쒕쾭???대씪?곕뱶???붾떎. Pi쨌Arduino/Pico? ?ㅼ젣 OLED
++諛곗꽑???쒖뿰???꾩닔 議곌굔?쇰줈 ?먯? ?딅뒗?? `preview`??蹂댁〈??OLED 蹂꾨룄 誘몃━蹂닿린 李쎌씠硫?
++?곸긽 留먰뭾?좉낵 湲곕줉 李쎌? ?④퍡 ?ъ슜?????덈떎. ?꾨옒 cloud 紐낅졊? ?꾩옱 CTC 湲곗??좎슜?쇰줈,
++?꾩엯 ?덉젙??Qwen2.5-VL???곌껐쨌?덉쭏 寃利앹쓣 ??좏븯吏 ?딅뒗??
++
+ ## ?쒖뿰 紐⑤뱶 寃곗젙
+ 
+ ??湲곕뒫????젣?섏? ?딄퀬, ?ㅼ륫 寃곌낵濡??뱀씪 湲곕낯 紐⑤뱶留??뺥븳??
+ 
+ | ?곗꽑?쒖쐞 | 議곌굔 | ?ㅽ뻾 紐낅졊 |
+ |---|---|---|
+-| A. ?꾩껜 湲곕뒫 | ?먃룹뼹援?寃異쒕쪧 媛곴컖 90% ?댁긽, 15遺??뚰겕 ?듦낵 | `python main.py --sign-camera 0 --face-camera 1 --display serial --stats reports/live.csv` |
+-| B. ??移대찓??| ???붾㈃?먯꽌 ?먃룹뼹援?90% ?댁긽, 泥섎━??異⑸텇 | `python main.py --display serial --stats reports/live.csv` |
+-| C. ?덉젙??| ?쇨뎬 移대찓???먮뒗 AR ?뺣젹 遺덉븞??| `python main.py --fixed-caption --display serial --stats reports/live.csv` |
++| A. ?명듃遺?湲곕낯 | ?먃룹뼹援?寃異쒕쪧怨??ㅼ젣 踰덉뿭 ?덉쭏, 15遺??뚰겕 寃利?| `python main.py --sign-backend cloud --auto-segment --viewpoint webcam --display preview --video-captions --transcript --stats reports/live.csv` |
++| B. ??移대찓??鍮꾧탳 | ??移대찓?쇰줈 ?먃룹뼹援댁쓣 ?④퍡 ?닿린 ?대젮???뚮쭔 | `python main.py --sign-backend cloud --sign-camera 0 --face-camera 1 --display preview --video-captions --transcript --stats reports/live.csv` |
++| C. ?덉젙??| ?쇨뎬 異붿쟻 ?먮뒗 留먰뭾???꾩튂 遺덉븞??| `python main.py --sign-backend cloud --fixed-caption --display preview --stats reports/live.csv` |
+ | D. ?뱁솕 ?대갚 | ?쇱씠釉??μ튂 蹂듦뎄媛 30珥덈? ?섏쓬 | 媛숈? ?μ튂濡?誘몃━ 李띿? 臾댄렪吏?60~90珥??곸긽 ?ъ깮 |
+-| E. ?명듃遺??뱀틺 ?곗냽 踰덉뿭 | ?덇꼍 ?μ튂 ????명듃遺????濡??쒖뿰 | ?꾨옒 "?명듃遺??뱀틺 ?쒖뿰" ??|
+ 
+ 紐⑤뱶 A/B???쇨뎬 ?듭빱媛 ?붾뱾?ㅻ룄 ?뚯꽦 ?먮쭑 ?먯껜???좎??쒕떎. 移대찓?쇨? ?꾨? ?ㅽ뙣?섎㈃ 紐⑤뱶 C?? `--no-sign --fixed-caption`?쇰줈 ?뚯꽦?믪옄留됰쭔 怨꾩냽 ?쒖뿰?????덈떎.
+diff --git a/PROJECT_REVIEW.md b/PROJECT_REVIEW.md
+index 819360f..3f373f0 100644
+--- a/PROJECT_REVIEW.md
++++ b/PROJECT_REVIEW.md
+@@ -2,9 +2,14 @@
+ 
+ 寃??湲곗?: 2???, 12二? 罹≪뒪???붿옄??寃쎌쭊????낆긽 紐⑺몴.
+ 
++?꾩옱 援ъ꽦? **?명듃遺??대씪?댁뼵??+ ?대씪?곕뱶 ?쒕쾭**?대ŉ ?대????곕룞? ?꾩냽 寃????곸씠??
++Pi쨌Arduino쨌Pico???꾩옱 援ъ꽦?먯꽌 ?쒖쇅?섍퀬, OLED 蹂꾨룄 誘몃━蹂닿린? ?댁쟾 ?곌껐 肄붾뱶??蹂댁〈?쒕떎.
++??臾몄꽌??珥덇린 ?댄쐶쨌?μ갑 ?ㅽ뿕 怨꾪쉷? ?꾨옒 寃???대젰?대ŉ, ?꾩옱 諛⑺뼢怨?援ы쁽 ?곹깭??+[README](README.md#?꾩옱-媛쒕컻-諛⑺뼢)瑜??곗꽑?쒕떎. Qwen2.5-VL? ?꾩엯 ?덉젙?쇰줈 ?꾩쭅 ?곌껐?섏? ?딆븯??
++
+ ## 寃곕줎
+ 
+-?쒖셿?꾪븳 ?낅┰???묐갑???ㅻ쭏?멸??섏뒪?앸씪??理쒖쥌 紐⑺몴???좎??쒕떎. ?ㅻ쭔 紐⑤뱺 湲곕뒫??媛숈?
++?대씪?곕뱶? ?곕룞?섎뒗 ?묐갑???ㅻ쭏?멸??섏뒪瑜?紐⑺몴濡??쒕떎. ?ㅻ쭔 紐⑤뱺 湲곕뒫??媛숈?
+ ?꾩꽦?꾨줈 ?쎌냽?섎㈃ 2紐끒?2二??쇱젙??臾대꼫吏誘濡? ?섎굹??肄붾뱶?먯꽌 ???④퀎濡??꾩꽦?꾨? ?볥뒗??
+ 
+ | ?④퀎 | 12二?紐⑺몴 | ?ㅽ뙣 ?쒖뿉???⑤뒗 寃곌낵 |
+@@ -15,8 +20,8 @@
+ 
+ ?곕씪???쇨뎬 異붿쟻 AR??吏湲?諛곗젣???꾩슂???녿떎. ?꾩옱 肄붾뱶????移대찓?? ??移대찓?? (`--face-camera`), 移대찓???녿뒗 怨좎젙 ?먮쭑(`--fixed-caption`)??紐⑤몢 吏?먰븳?? ?ㅼ륫 寃곌낵???곕씪
+-?쒖뿰 湲곕낯媛믩쭔 諛붽씀硫??쒕떎. ?곗궛遺??珥덇린?먮뒗 ?명듃遺??먮뒗 ?덈━ ?μ갑 Pi???먭퀬, 湲곕뒫 寃利???-寃쎈웾?뷀븳??
++?쒖뿰 湲곕낯媛믩쭔 諛붽씀硫??쒕떎. ?꾩옱 ?대씪?댁뼵???곗궛? ?명듃遺? 臾닿굅??紐⑤뜽 異붾줎? ?대씪?곕뱶??+?먮ŉ, 湲곕뒫 寃利????대????대씪?댁뼵?몃? 寃?좏븳??
+ 
+ ?낆긽 媛?μ꽦? 湲곕뒫?????ｋ뒗 寃껊낫???ㅼ젣 ?ъ슜??臾몄젣, 臾쇰━?곸쑝濡??꾩꽦???뺥깭, ?뺤쭅?? ?ㅽ뿕 ?ㅺ퀎, ?쇱씠釉??곕え ?덉젙?깆뿉???щ씪媛꾨떎.
+diff --git a/README.md b/README.md
+index 7cdfd92..4e0e486 100644
+--- a/README.md
++++ b/README.md
+@@ -1,23 +1,41 @@
+ # signglass ??泥?컖?μ븷???묐갑???뚰넻 ?ㅻ쭏?멸??섏뒪
+ 
+-?섏뼱? ?뚯꽦 ?ъ씠瑜?**?묐갑?μ쑝濡?* ?뉖뒗 ?덇꼍???μ튂?낅땲??
++?섏뼱? ?뚯꽦 ?ъ씠瑜?**?묐갑?μ쑝濡?* ?뉖뒗 ?ㅻ쭏?멸??섏뒪 ?꾨줈?앺듃?낅땲??
++?꾩옱??**?명듃遺??대씪?댁뼵??+ ?대씪?곕뱶 ?쒕쾭**濡?湲곕뒫??寃利앺븯怨? ?대????곕룞???ㅼ쓬 ?④퀎濡?寃?좏빀?덈떎.
+ 
+ | 諛⑺뼢 | ?대쫫 | ?섎뒗 ??|
+ |---|---|---|
+-| 李⑹슜?????곷?諛?| **Phase 1** | ?섏뼱瑜??몄떇???덇꼍 ?ㅽ뵾而ㅻ줈 **?뚯꽦** 異쒕젰 |
++| 李⑹슜?????곷?諛?| **Phase 1** | ?섏뼱瑜??쒓뎅??臾몄옣?쇰줈 蹂?섑븯怨?TTS濡?**?뚯꽦** 異쒕젰 |
+ | ?곷?諛???李⑹슜??| **Phase 2** | ?곷???留먯쓣 諛쏆븘?⑥꽌 ?곷? ?쇨뎬 ?놁뿉 **AR 留먰뭾??* |
+ 
+ ??諛⑺뼢???숈떆???뚯븘媛怨? ?쒕줈???뚮━媛 ?섎㉨?꾨릺吏 ?딅룄濡?諛섏씠以?寃뚯씠?멸? ?ъ씠???덉뒿?덈떎.
+ 
+-**?ㅽ뻾 寃쎈줈 ??媛吏:**
++## ?꾩옱 媛쒕컻 諛⑺뼢
+ 
+-- **湲곗? 寃쎈줈 (媛쒕컻 紐⑺몴):** `--sign-backend cloud`. 臾몄옣 ?⑥쐞 愿??醫뚰몴瑜??쒕쾭濡?蹂대궡 CTC ?곗냽
++| 援щ텇 | 諛⑺뼢怨?援ы쁽 ?곹깭 |
++|---|---|
++| ?꾩옱 ?대씪?댁뼵??| ?명듃遺곸쓽 移대찓?셋룸쭏?댄겕쨌?ㅽ뵾而??ъ슜. STT, ?쇨뎬 異붿쟻, ?곸긽 留먰뭾?? ???湲곕줉, OLED 蹂꾨룄 誘몃━蹂닿린 ?ㅽ뻾 |
++| ?섏뼱 踰덉뿭 紐⑺몴 | ?대씪?곕뱶?먯꽌 **Qwen2.5-VL-7B-Instruct ?먮뒗 72B-Instruct** ?쒖슜 ?덉젙. ?꾩쭅 VLM ?낅젰쨌異붾줎 寃쎈줈???곌껐?섏? ?딆쓬 |
++| ?꾩옱 ?쒕쾭 援ы쁽 | 醫뚰몴 ??CTC 湲濡쒖뒪 ?몄떇 ??寃??臾몄옣 ?먮뒗 ?띿뒪???몄뼱 紐⑤뜽(vLLM). ?꾩옱 湲곕낯 ?띿뒪??紐⑤뜽? `Qwen/Qwen2.5-7B-Instruct`?대ŉ VLM怨??ㅻ쫫 |
++| ?뚯꽦 異쒕젰 | ?꾩옱 WAV 罹먯떆 + OS ?댁옣 ?뚯꽦. ?먯쑀 ?앹꽦 臾몄옣??TTS ?붿쭊? ?좎젙쨌?곌껐 ?덉젙 |
++| ?ㅼ쓬 ?대씪?댁뼵??| ?대????곕룞 寃?? ?꾩옱 Python/OpenCV ?깆씠 ?대??곗뿉???ㅽ뻾?쒕떎???섎????꾨떂 |
++| OLED | `HUD (OLED simulation)` 蹂꾨룄 李쎌쓣 ?좎?. ?ㅼ젣 ?덇꼍 ?붿뒪?뚮젅?댁쓽 援щ룞 ?명꽣?섏씠?ㅒ룰킅?숆퀎??誘명솗??|
++| Pi쨌Arduino쨌Pico | **?꾩옱 援ъ꽦쨌援щℓ쨌?쒖뿰???꾩젣?먯꽌 ?쒖쇅.** 愿??肄붾뱶???댁쟾 ?섎뱶?⑥뼱 ?ㅽ뿕 寃쎈줈濡?蹂댁〈 |
++
++紐⑺몴 ?먮쫫? **?섏뼱 ?낅젰 ???대씪?곕뱶 VLM ???뺤젙 ?쒓뎅??臾몄옣 ??TTS ???곷?諛⑹뿉寃??뚯꽦 ?꾨떖**?낅땲??
++諛섎? 諛⑺뼢? **?곷?諛??뚯꽦 ??濡쒖뺄 STT ???쇨뎬 異붿쟻 留먰뭾?졖룸???湲곕줉**?낅땲??
++VLM???곸긽/?꾨젅???낅젰怨?JSON 蹂댁“ ?뺣낫??援ъ꽦? 蹂꾨룄 ?ㅺ퀎媛 ?꾩슂?섎ŉ, ?꾩옱 醫뚰몴 API??+紐⑤뜽 ?대쫫留?諛붽퓭 VLM ?곕룞???꾨즺?섎뒗 援ъ“???꾨떃?덈떎.
++
++**?꾩옱 肄붾뱶?먯꽌 ?ㅽ뻾?????덈뒗 ?섏뼱 寃쎈줈:**
++
++- **?대씪?곕뱶 湲곗???** `--sign-backend cloud`. 臾몄옣 ?⑥쐞 愿??醫뚰몴瑜??쒕쾭濡?蹂대궡 CTC ?곗냽
+   ?섏뼱 ?몄떇 ??臾몄옣??留뚮벊?덈떎. 臾몄옣? 寃??臾몄옣 ???몄뼱 紐⑤뜽(vLLM) ?쒖쑝濡?留뚮뱾怨? ?ㅽ뙣?섎㈃
+   誘몃━蹂닿린留??쒖떆?⑸땲??
+ - **?쒖뿰 ???** `--sign-backend local`(?꾩옱 CLI 湲곕낯媛?. 怨좊┰ ?⑥뼱 ONNX 遺꾨쪟? 洹쒖튃 臾몄옣 議고빀?낅땲??
+   ?곗씠???뺣낫媛 ??뼱吏????곕뒗 ??덉씠硫? ??寃쎈줈濡??쒖뿰???뚮뒗 ?쒖뿰 踰붿쐞瑜??곕줈 諛앺옓?덈떎.
+ 
+-湲곕낯媛믪? ?쒕쾭/?μ튂 ?몄떇 鍮꾧탳(A/B)? ?쒖뿰 紐⑹쟻???곕씪 ?뺥빀?덈떎. ?곗씠??洹쒓꺽쨌?숈뒿쨌紐⑥쓽 ?쒕쾭쨌GPU
++CLI 湲곕낯媛믪? ?꾩쭅 `local`?대ŉ, ?대씪?곕뱶 寃쎈줈???듭뀡?쇰줈 ?좏깮?⑸땲?? ?곗씠??洹쒓꺽쨌?숈뒿쨌紐⑥쓽 ?쒕쾭쨌GPU
+ ?ㅽ뻾쨌?먮룞 諛쒗솕 寃利앹? [CLOUD_SETUP.md](CLOUD_SETUP.md)瑜?李멸퀬?섏꽭?? ?ㅼ젣 ?곗냽 ?섏뼱 ?곗씠?곗?
+ 紐⑤뜽???꾩쭅 ?놁뼱 踰덉뿭 ?깅뒫? 寃利앸릺吏 ?딆븯?듬땲??
+ 
+@@ -31,21 +49,21 @@
+ |---|---|
+ | ?뚯뒪 紐⑤뱢쨌?뚭? ?뚯뒪??| ??**53媛??꾩썝 ?듦낵** (PyTorch?뭀NNX, CTC쨌紐⑥쓽 ?대씪?곕뱶 ?듯빀, HTTP 臾댁씤 ?뚰겕, ?쇨뎬 異붿쟻 諛?留먰뭾??UI, 3D ???뱀쭠, ?먮룞 援ш컙 寃利??ы븿). CI ?먮룞 ?ㅽ뻾(`.github/workflows/tests.yml`); ?ㅺ린湲?愿???뚯뒪??誘몄셿猷???吏곸젒 ???뚯뒪?몃뒗 [`TEST_CHECKLIST.md`](TEST_CHECKLIST.md) |
+ | ?쇨뎬 異붿쟻 AR 留먰뭾??& ???湲곕줉 | ???ㅼ떆媛?移대찓???곸긽 ??AR 留먰뭾???ㅻ쾭?덉씠, 1:1 怨듦컙 ID 異붿쟻 諛??대┃ 湲곕컲 ?붿옄 ?섎룞 ?좏깮, 理쒓렐 200媛????湲곕줉 ?먯깋 李?`--transcript`, H/J/K/L) 援ы쁽 ?꾨즺 |
+-| ?대씪?곕뱶 ?곗냽 踰덉뿭 | ?윞 醫뚰몴 ?숈뒿쨌API쨌vLLM ?곕룞, 湲곌린 ?몄떇 鍮꾧탳 寃쎈줈(B, `--recognize device`)? A/B 痢≪젙 ?꾧뎄 援ы쁽; ?ㅼ젣 臾몄옣 ?곗씠?걔텴PU 紐⑤뜽쨌踰덉뿭 ?덉쭏 寃利??꾩슂 |
++| ?대씪?곕뱶 ?섏뼱 踰덉뿭 | ?윞 CTC+?띿뒪???몄뼱 紐⑤뜽 湲곗??좉낵 A/B 痢≪젙 ?꾧뎄 援ы쁽. Qwen2.5-VL? ?꾩엯 ?덉젙?대ŉ ?ㅼ젣 臾몄옣 ?곗씠?걔텴PU 紐⑤뜽쨌踰덉뿭 ?덉쭏 寃利??꾩슂 |
+ | 3D 諛⑺뼢쨌?먮룞 援ш컙쨌?뱀쭠 鍮꾧탳 | ?윞 3D ?먮컮??諛⑺뼢/?먮ぉ 源딆씠 遺꾧린, ???吏곸엫 ?먮룞 援ш컙(`--auto-segment`), ?명듃遺??뺣㈃/?덇꼍 ?쒖젏 遺꾧린(`--viewpoint`), ?뱀쭠 援ъ꽦 鍮꾧탳 ?꾧뎄(`tools/compare_features.py`) 援ы쁽 |
+ | ?숈뒿 ?섏〈??| ??PyTorch 2.4.1 / ONNX 1.16.2 / onnxruntime 1.19.2 / scikit-learn 1.5.2 ?ㅼ튂 ?뺤씤 |
+ | ?숈뒿??紐⑤뜽 `models/sign_lstm.onnx` | ???놁쓬 ???섏뼱 ?⑥뼱 ?곗씠???섏쭛 諛??숈뒿 ?꾩슂 |
+ | 吏곸젒 ?섏쭛???곗씠??`data/raw/**/*.npy` | ??0媛?|
+ | AI Hub ?섑뵆 | ?윞 3D 蹂???꾨즺: 100?대┰??1?쒗??20?숈옉 洹몃９; ?쒓뎅????留ㅽ븨쨌異붽? ?붿옄 ?꾩슂 (`data/processed/aihub3d`) |
+ | ?쒓뎅??STT | ??湲곕낯 sherpa-onnx ?ㅽ듃由щ컢 Zipformer(`models/sherpa-ko-174m-chunk32/`) 以鍮??꾨즺. 鍮꾧탳 紐⑤뜽(`sherpa-ko-2024-06-16/`, `models/vosk-ko/`) 諛??⑹꽦?뚯꽦 22臾몄옣 臾닿껐??寃利??꾨즺 |
+-| TTS 罹먯떆 `assets/tts_cache/*.wav` | ??macOS 22媛?wav 諛?manifest.json (16kHz PCM 紐⑤끂, 臾댁쓬 ?꾨떂 ?뺤씤) |
++| TTS | ?윞 macOS 22媛?WAV 罹먯떆 諛?OS ?뚯꽦 fallback 援ы쁽. ??臾몄옣??TTS 紐⑤뜽쨌API ?곌껐 ?덉젙 |
+ | ?쒓? ?쎌? ?고듃 `assets/fonts/Galmuri11.ttf` | ??Galmuri v2.40.4 + LICENSE.txt ?ㅼ튂 ?뺤씤 |
+-| ?섎뱶?⑥뼱 (OLED / 愿묓븰怨? | ??誘몄갑??(?뚰봽?몄썾???먮??덉씠??`--display preview`濡?寃利?媛?? |
++| ?ㅼ젣 ?덇꼍 ?붿뒪?뚮젅?는룻쑕????곕룞 | ?윞 OLED ?뚰봽?몄썾??誘몃━蹂닿린 ?좎?. ?ㅻЪ ?붿뒪?뚮젅??援щ룞쨌愿묓븰 ?뺣젹怨??대????대씪?댁뼵?몃뒗 誘멸뎄??|
+ 
+-媛??癒쇱? 寃利앺븷 寃껋? 紐⑤뜽 ?ш린媛 ?꾨땲??**?ㅼ젣 ?μ갑 ?꾩튂?먯꽌 ??寃異쒕쪧怨??쇨뎬 寃異쒕쪧??-媛곴컖 異⑸텇?쒓?**?낅땲?? 湲곕낯 ??移대찓?? `--face-camera`瑜??곕뒗 ?섑뼢 ???꾨갑 ?쇨뎬 ??移대찓??
+-移대찓?쇨? ?꾪? ?꾩슂 ?녿뒗 `--fixed-caption`源뚯? 媛숈? 肄붾뱶???좎??⑸땲?? 2二쇱감 ?ㅼ륫?쇰줈 理쒖쥌
+-?μ갑 援ъ꽦??怨좊Ⅴ?? ?쇨뎬 AR 紐⑺몴瑜?誘몃━ 踰꾨━吏???딆뒿?덈떎.
++?꾩옱 ?쒖뿰? ?명듃遺??뱀틺怨??댁옣 ?ㅻ뵒?ㅻ? 湲곗??쇰줈 吏꾪뻾?⑸땲?? 癒쇱? ?섏뼱 ?낅젰遺??臾몄옣쨌?뚯꽦
++異쒕젰源뚯?? STT遺??留먰뭾?좉퉴吏??寃쎈줈瑜?寃利앺븯怨? ?ㅼ젣 ?덇꼍 ?μ갑? ?붿뒪?뚮젅???곌껐 諛⑹떇怨?+?먃룹뼹援?寃異쒕쪧??痢≪젙????吏꾪뻾?⑸땲?? ??移대찓??`--face-camera`)???꾩슂????鍮꾧탳?섎뒗
++?좏깮 寃쎈줈?대ŉ, `--fixed-caption`? ?쇨뎬 異붿쟻 ?녿뒗 ?먮쭑 ??덉쑝濡??좎??⑸땲??
+ 
+ 2紐끒?2二?湲곗? 沅뚯옣 踰붿쐞, 二쇱감蹂?寃뚯씠?? ?됯? 吏?쒕뒗
+ [`PROJECT_REVIEW.md`](PROJECT_REVIEW.md)???뺣━?덉뒿?덈떎.
+@@ -57,25 +75,29 @@ vLLM쨌?대씪?곕뱶 援ъ“ ?됯?, ?깅뒫쨌由ы뙥?좊쭅 紐⑸줉, LLM ?숈뒿 ?먮떒
+ 
+ ---
+ 
+-## ?쒖뒪???꾪궎?띿쿂
++## ?꾩옱 援ы쁽 ?꾪궎?띿쿂
+ 
+ `signglass`??GUI? ?붿뒪?뚮젅??異쒕젰???대떦?섎뒗 硫붿씤 ?ㅻ젅?쒖? 鍮꾩쟾쨌STT쨌TTS쨌?대씪?곕뱶 ?듭떊???꾨떞?섎뒗 諛깃렇?쇱슫???뚯빱 ?ㅻ젅?쒕줈 遺꾨━?섏뼱 ?덉뒿?덈떎.
+-MediaPipe? ONNX??C++ 援ш컙?먯꽌 Python GIL???댁젣?섎?濡?硫?곗퐫???섍꼍?먯꽌 ?꾩쟾??蹂묐젹 泥섎━媛 媛?ν빀?덈떎.
++MediaPipe? ONNX???ㅼ씠?곕툕 ?곗궛? ?쇰? 蹂묐젹 ?ㅽ뻾??媛?ν븯吏留??ㅼ젣 泥섎━?됱? ?μ튂?먯꽌 痢≪젙?댁빞 ?⑸땲??
++?꾨옒 洹몃┝? **?꾩옱 援ы쁽??CTC 湲곗??좉낵 ?명듃遺?UI**?낅땲?? ?꾩엯 ?덉젙??Qwen2.5-VL怨?+?대????대씪?댁뼵?? 誘명솗?뺤씤 ?ㅻЪ OLED ?곌껐??援ы쁽 ?꾨즺??援ъ꽦?쇰줈 ?쒖떆?섏? ?딆뒿?덈떎.
+ 
+ ### 1. ?꾩껜 ?쒖뒪??援ъ“ 諛??ㅻ젅???곗씠???먮쫫
+ 
+ ```mermaid
+ flowchart TB
+     subgraph Capture["?벜 罹≪쿂 & ?쇱꽌 ?낅젰"]
+-        Cam1["?섏뼱 移대찓??(?섑뼢/?뺣㈃)"]
+-        Cam2["?쇨뎬 移대찓??(?꾨갑, ?좏깮)"]
+-        Mic["?덇꼍 留덉씠??]
++        Cam1["?명듃遺??섏뼱 移대찓??(?꾩옱)"]
++        Cam2["異붽? ?쇨뎬 移대찓??(?좏깮)"]
++        Mic["?명듃遺?留덉씠??]
+     end
+ 
+     subgraph Threads["?숋툘 諛깃렇?쇱슫???뚯빱 ?ㅻ젅??]
+         subgraph VisionTh["VisionThread (鍮꾩쟾 ?뚯빱)"]
+             MP["MediaPipe Holistic / Hands"]
+-            Norm["246李⑥썝 李⑹슜???뺢퇋??]
++            Norm["濡쒖뺄 ?⑥뼱??246李⑥썝 ?뺢퇋??]
++            Pose["?대씪?곕뱶??PoseSequence 2D/3D"]
++            VisionFaceDet["寃쎈웾 ?쇨뎬 寃異?]
+             LocalInfer["SignPredictor (ONNX LSTM)"]
+             Seg["ActivitySegmenter (???吏곸엫 媛먯?)"]
+         end
+@@ -86,7 +108,7 @@ flowchart TB
+ 
+         subgraph AudioTh["?ㅻ뵒??泥섎━ ?뚯빱"]
+             STT["SttWorker (sherpa-onnx Zipformer)"]
+-            TTS["TtsPlayer (罹먯떆 WAV ?ъ깮)"]
++            TTS["TtsPlayer (WAV 罹먯떆 / OS ?뚯꽦)"]
+             Gate{{"AudioGate\n(諛섏씠以??먯퐫 ?듭젣)"}}
+         end
+ 
+@@ -105,30 +127,31 @@ flowchart TB
+     end
+ 
+     subgraph Output["?몥 異쒕젰 ?μ튂 & UI"]
+-        OLED["OLED ?붿뒪?뚮젅??(SSD1306/SSD1309)"]
++        OLED["OLED 蹂꾨룄 誘몃━蹂닿린 (preview)"]
+         VidWin["?곸긽 李?(?ㅼ떆媛?AR 留먰뭾??"]
+         TransWin["???湲곕줉 李?(H??"]
+-        Spk["?덇꼍 ?ㅽ뵾而?]
++        Spk["?명듃遺??ㅽ뵾而?]
+     end
+ 
+-    subgraph Server["?곻툘 ?대씪?곕뱶 ?쒕쾭 (FastAPI)"]
++    subgraph Server["?곻툘 ?꾩옱 ?대씪?곕뱶 湲곗???(FastAPI)"]
+         CTC["CTC ?곗냽 ?섏뼱 ?몄떇"]
+-        LLM["踰덉뿭 紐⑤뱢 (寃?섎Ц??/ vLLM)"]
++        LLM["寃??臾몄옣 / ?띿뒪??LLM (vLLM)"]
+     end
+ 
+     %% ?뚯씠?꾨씪???곌껐
+     Cam1 --> MP --> Norm
+     Norm --> LocalInfer
+-    Norm --> Seg
++    MP --> Pose --> Seg
++    Cam1 --> VisionFaceDet
+     Cam2 --> FaceDet
+ 
+     Mic --> Gate
+     Gate -->|?뚯꽦 ?ㅽ듃由? STT
+-    STT -->|partial / final ?대깽?? CapState
++    STT -->|partial / final / cancel| CapState
+ 
+     LocalInfer -->|?⑥뼱 ?뺤젙| Phrase["PhraseBuilder"]
+-    Phrase -->|諛쒗솕 吏?? Gate
+-    Gate -->|?ъ깮 以?留덉씠??裕ㅽ듃| TTS
++    Phrase -->|諛쒗솕 吏?? TTS
++    TTS -.->|?ъ깮 以?留덉씠???낅젰 李⑤떒| Gate
+     TTS --> Spk
+ 
+     Seg -->|臾몄옣 援ш컙| Client
+@@ -136,10 +159,10 @@ flowchart TB
+     Server --> CTC --> LLM
+ 
+     FaceDet --> Tracker
+-    MP -.->|?쇨뎬 諛붿슫??諛뺤뒪| Tracker
++    VisionFaceDet -->|?쇨뎬 諛붿슫??諛뺤뒪| Tracker
+     Tracker --> CapState
+     CapState --> TxtLayout --> HUD & Overlay
+-    CapState --> TransView
++    CapState -->|?뺤젙 臾몄옣| History["CaptionHistory"] --> TransView
+ 
+     HUD --> OLED
+     Overlay --> VidWin
+@@ -152,7 +175,8 @@ flowchart TB
+ 
+ ### 2. Phase 1 ???섏뼱 ???뚯꽦 (李⑹슜?????곷?諛?
+ 
+-?섏뼱 ?몄떇??嫄곗퀜 ?덇꼍 ?ㅽ뵾而ㅻ줈 ?⑹꽦 ?뚯꽦??異쒕젰?섎뒗 ?뚯씠?꾨씪?몄엯?덈떎. 濡쒖뺄 ?⑥뼱 ?몄떇 寃쎈줈? ?대씪?곕뱶 ?곗냽 ?섏뼱 踰덉뿭 寃쎈줈瑜?紐⑤몢 吏?먰빀?덈떎.
++?꾩옱 援ы쁽? 濡쒖뺄 ?⑥뼱 ?몄떇 ?먮뒗 ?대씪?곕뱶 CTC 湲곗??좎쓽 寃곌낵瑜??명듃遺??ㅽ뵾而ㅻ줈 異쒕젰?⑸땲??
++Qwen2.5-VL ?꾩엯 ???섏뼱 ?낅젰쨌?쒕쾭 異붾줎 寃쎈줈瑜?異붽??섍퀬, ?뺤젙 臾몄옣??TTS???꾨떖?섎룄濡??뺤옣?⑸땲??
+ 
+ ```mermaid
+ flowchart LR
+@@ -172,18 +196,18 @@ flowchart LR
+         Builder["PhraseBuilder\n(?⑥뼱??臾몄옣 議고빀 諛?吏??諛쒗솕)"]
+     end
+ 
+-    subgraph CloudPath["Cloud ?몄떇 寃쎈줈 (--sign-backend cloud)"]
++    subgraph CloudPath["?꾩옱 Cloud 湲곗???(--sign-backend cloud)"]
+         AutoSeg["???吏곸엫 ?먮룞 援ш컙\n(--auto-segment / SPACE)"]
+         PoseSeq["PoseSequence (2D/3D)"]
+         CloudSrv["SignServer (FastAPI)"]
+         CTC["CTC ?곗냽 ?섏뼱 ?몄떇\n(?먮뒗 湲곌린 ONNX ?몄떇)"]
+-        Trans["踰덉뿭 ?붿쭊\n(寃??臾몄옣 ??vLLM)"]
++        Trans["臾몄옣 ?앹꽦\n(寃??臾몄옣 / ?띿뒪??LLM)"]
+     end
+ 
+     subgraph AudioOut["?뚯꽦 異쒕젰"]
+-        TTS["TtsPlayer (?ъ쟾 ?앹꽦 WAV ?ъ깮, 吏??0ms)"]
++        TTS["TtsPlayer (WAV 罹먯떆 / OS ?뚯꽦)"]
+         Gate{{"AudioGate (諛섏씠以?寃뚯씠??"}}
+-        Spk["?덇꼍 ?ㅽ뵾而?]
++        Spk["?명듃遺??ㅽ뵾而?]
+     end
+ 
+     Hand --> MP --> Extract
+@@ -207,7 +231,8 @@ flowchart LR
+    - ???吏곸엫 湲곕컲 ?먮룞 援ш컙 遺꾪븷(`ActivitySegmenter`) ?먮뒗 ???낅젰(SPACE)?쇰줈 諛쒗솕 援ш컙 寃異?
+    - ?쒗??醫뚰몴 ?꾩넚 ??CTC 紐⑤뜽 ?붿퐫??諛??몄뼱 紐⑤뜽(vLLM) 湲곕컲 ?먯뿰??臾몄옣 ?앹꽦.
+ 4. **TTS 異쒕젰 (`src/tts_player.py`)**:
+-   - 誘몃━ ?앹꽦??怨좏뭹吏?16kHz WAV 罹먯떆瑜?鍮꾨룞湲??ъ깮 (吏??0ms).
++   - 誘몃━ ?앹꽦??16kHz WAV 罹먯떆瑜?鍮꾨룞湲??ъ깮?섎ŉ, 罹먯떆???놁쑝硫?OS ?뚯꽦?쇰줈 ?泥?
++   - 罹먯떆???⑹꽦 ?湲곕? 以꾩씠吏留??먃룹옱???μ튂 吏?곗? ?⑥뒿?덈떎. ?먯쑀 ?앹꽦 臾몄옣??TTS ?붿쭊? ?꾩냽 ?묒뾽?낅땲??
+ 
+ ---
+ 
+@@ -218,7 +243,7 @@ flowchart LR
+ ```mermaid
+ flowchart TD
+     subgraph Audio["?뚯꽦 ?몄떇 (STT)"]
+-        Mic["?곷?諛??뚯꽦 (?덇꼍 留덉씠??"]
++        Mic["?곷?諛??뚯꽦 (?명듃遺?留덉씠??"]
+         Gate{{"AudioGate\n(?ㅽ뵾而?異쒕젰 以?留덉씠??裕ㅽ듃)"}}
+         Sherpa["SttWorker (sherpa-onnx Zipformer ?ㅽ듃由щ컢)\npartial(留먰븯??以? / final(諛쒗솕 ?뺤젙)"]
+     end
+@@ -227,7 +252,7 @@ flowchart TD
+         Cam["?꾨갑 移대찓???곸긽"]
+         Det["寃쎈웾 ?쇨뎬 寃異?(FaceDetection)"]
+         Track["FaceTracker (src/face_tracker.py)\n??1:1 怨듦컙 ID 留ㅽ븨\n??留덉슦???대┃ ?섎룞 ?붿옄 ?좏깮\n??0.45珥?寃異??꾨씫 ?좎삁"]
+-        Smooth["OneEuroFilter\n(吏???녿뒗 醫뚰몴 ?⑤┝ 蹂댁젙)"]
++        Smooth["OneEuroFilter\n(醫뚰몴 ?⑤┝ ?꾪솕)"]
+     end
+ 
+     subgraph Layout["?먮쭑 ?섎챸 & ?덉씠?꾩썐 愿由?]
+@@ -237,7 +262,7 @@ flowchart TD
+     end
+ 
+     subgraph Display["?ㅼ쨷 ?붿뒪?뚮젅??異쒕젰"]
+-        OLED["OLED HUD (SSD1306/SSD1309)\n???쇨뎬 ??留먰뭾??諛곗튂\n???쒖빞 諛??붿궡??媛?대뱶\n???섎떒 怨좎젙 ?먮쭑 (--fixed-caption)"]
++        OLED["OLED 蹂꾨룄 誘몃━蹂닿린 (preview)\n???쇨뎬 ??留먰뭾??諛곗튂\n???쒖빞 諛??붿궡??媛?대뱶\n???섎떒 怨좎젙 ?먮쭑 (--fixed-caption)"]
+         Video["VideoOverlay (?뱀틺 李?\n???ㅼ젣 移대찓???곸긽 ??AR 留먰뭾??n???붿옄 ?좏깮 諛뺤뒪 & ?뚯꽦 ?몄떇 ?ㅼ떆媛??쒖떆"]
+         Transcript["TranscriptView (???湲곕줉 李?\n??H???좉?, J/K ?ㅽ겕濡? L 理쒖떊 蹂듦?"]
+     end
+@@ -256,15 +281,15 @@ flowchart TD
+    - `sherpa-onnx` Zipformer ?ㅽ듃由щ컢?쇰줈 ?곷?諛?留먯쓣 利됯컖 ?띿뒪?명솕 (`partial` 以묎컙 寃곌낵 諛?`final` ?뺤젙 ?대깽??.
+    - 李⑹슜?먭? ?섏뼱濡?留먰븯??TTS媛 異쒕젰?섎뒗 ?숈븞?먮뒗 `AudioGate`媛 留덉씠?щ? 李⑤떒?섏뿬 ?먮쭑 猷⑦봽(?먯퐫) 諛⑹?.
+ 2. **怨듦컙 ?쇨뎬 異붿쟻 (`src/face_tracker.py`)**:
+-   - ?쇨뎬 寃異?寃곌낵??怨듦컙 異붿쟻 ID瑜?遺?ы븯??諛쒗솕 ?쒖옉 ?쒖젏???붿옄? 1:1 諛붿씤??
+-   - 留덉슦??醫뚰겢由?쑝濡?????곷?瑜?吏곸젒 ?좏깮 媛?ν븯硫? `OneEuroFilter`濡?議곗? ?⑤┝??吏???놁씠 ?쒓굅.
++   - ?쇨뎬 寃異?寃곌낵??怨듦컙 異붿쟻 ID瑜?遺?ы븯??泥??몄떇 寃곌낵 ?쒓컖???좏깮 ??곸뿉 ?먮쭑 ?곌껐.
++   - 留덉슦??醫뚰겢由?쑝濡?????곷?瑜??좏깮?섎ŉ, `OneEuroFilter`濡??꾩튂 ?⑤┝???꾪솕. ?ㅼ젣 諛쒗솕???먮룞 ?먮퀎? 誘멸뎄??
+ 3. **?먮쭑 ?섎챸 & ?덉씠?꾩썐 (`src/caption_state.py`, `src/text_layout.py`)**:
+    - 諛쒗솕 以묒뿉???ㅼ떆媛?媛깆떊, 諛쒗솕 醫낅즺 ??臾몄옣 湲몄씠???곕씪 3~10珥덇컙 留먰뭾???좎?.
+    - ?붾㈃ ??뿉 留욎텣 ?먮룞 媛쒗뻾 諛?理쒕? 3以??쒖떆.
+ 4. **?ㅼ뼇??異쒕젰 寃쎈줈**:
+-   - **OLED HUD**: `HudRenderer`瑜?嫄곗퀜 128횞64 SSD1306/SSD1309 ?붿뒪?뚮젅?댁뿉 ?뚮뜑留?
++   - **OLED 蹂꾨룄 誘몃━蹂닿린**: `HudRenderer`瑜?嫄곗퀜 `HUD (OLED simulation)` 李쎌뿉 ?쒖떆. ??踰덉뿭怨??곷? ?먮쭑?????곸뿭 ?좎?.
+    - **鍮꾨뵒???ㅻ쾭?덉씠**: ?뱀틺 ?곸긽 李??꾩뿉 AR 留먰뭾?좉낵 ?붿옄 異붿쟻 諛뺤뒪瑜??ㅻ쾭?덉씠 (`--video-captions`).
+-   - **???湲곕줉 李?*: ?곕????⑥텞??`H`濡??꾩껜 ???湲곕줉 李쎌쓣 ?댁뼱 ?ㅽ겕濡??먯깋 媛??(`--transcript`).
++   - **???湲곕줉 李?*: OpenCV 李쎌뿉 ?ъ빱?ㅻ? ?먭퀬 `H`濡?湲곕줉 李쎌쓣 ?댁뼱 ?ㅽ겕濡??먯깋 (`--transcript`).
+ 
+ ---
+ 
+@@ -284,7 +309,7 @@ src/
+   features_v2.py       AI Hub(OpenPose) ??MediaPipe 怨듯넻 遺遺꾩쭛?? 101李⑥썝 (?덇굅??
+   hand_shape3d.py      AI Hub 3D ??MediaPipe Hands world 怨듯넻 ??紐⑥뼇, 462李⑥썝
+   hud.py             ??醫뚰몴蹂??+ 留먰뭾???뚮뜑 + SSD1306 ?⑦궧 + ?쒖떆 ?댁슜 ?좏깮(HudContent)
+-  oled_bridge.py       ?붿뒪?뚮젅??諛깆뿏??(preview / serial / pi / null)
++  oled_bridge.py       preview / null + ?댁쟾 ?ㅻЪ ?곌껐 肄붾뱶(serial / pi, ?꾩옱 誘몄궗??
+   stt_worker.py        ?ㅽ듃由щ컢 STT ?ㅻ젅??(sherpa-onnx 湲곕낯, vosk ?泥?
+   tts_player.py        鍮꾨룞湲?TTS ?ъ깮 ?뚯빱
+   audio_gate.py        諛섏씠以?寃뚯씠??(?ㅽ뵾而?異쒕젰 以?留덉씠??裕ㅽ듃, ?먯퐫 猷⑦봽 李⑤떒)
+@@ -307,7 +332,7 @@ src/
+   face_tracker.py    ???ㅼ쨷 ?쇨뎬 寃異? 1:1 怨듦컙 ID 異붿쟻 諛??붿옄 ?좏깮
+   caption_state.py   ???먮쭑 ?섎챸 二쇨린(???留뚮즺/?쇨뎬 ?곌껐) ?곹깭 癒몄떊
+   caption_history.py   理쒓렐 200媛??뺤젙 ???湲곕줉 硫붾え由?蹂닿?
+-  text_layout.py       ?붾㈃ ??留욎땄 ?쒓? ?먮룞 以꾨컮轅?諛?留먰뭾??諛뺤뒪 怨꾩궛
++  text_layout.py       ?쒓? ?고듃 濡쒕뵫쨌?붾㈃ ??留욎땄 以꾨컮轅?   video_overlay.py   ??移대찓???곸긽 ???ㅼ떆媛?AR 留먰뭾?졖룹뼹援??뚮몢由??뚮뜑留?   transcript_view.py   OpenCV 湲곕컲 ???湲곕줉 GUI 李?(H???좉?, J/K ?ㅽ겕濡?
+   calibrate.py         ?쒖감(parallax) 蹂댁젙 ?꾧뎄
+@@ -336,13 +361,14 @@ tools/
+   evaluate_segments.py   ?먮룞 援ш컙 ?됯?: 寃쎄퀎 吏?걔룹옒由셋룸텇?졖룹삤寃異?   send_pose.py           ?ъ쫰 ?쒗???뚯씪/?붾? ?곗씠???쒕쾭 ?꾩넚 諛??묐떟 ?뚯뒪??   soak.py                HTTP 臾댁씤 ?뚰겕 (?μ븷 二쇱엯, 諛쒗솕 媛먯궗, 硫붾え由?룹뒪?덈뱶)
++  profile_pipeline.py    ?먮┛ ?명듃遺?吏꾨떒: 移대찓???ㅼ젣 珥덈떦 ?μ닔, ?④퀎蹂?泥섎━ ?쒓컙
+ 
+ tests/
+   run_all.py           ?꾩껜 ?뚯뒪???ㅽ뻾 (pytest 遺덊븘??
+   test_*.py            ?뚭? ?뚯뒪??53醫?(?꾩썝 ?듦낵)
+ 
+ firmware/
+-  oled_bridge.ino      PC 援ъ“?먯꽌留??꾩슂??USB?봖PI 釉뚮━吏 ?뚯썾??+  oled_bridge.ino      ?댁쟾 USB?봖PI 釉뚮━吏 ?뚯썾??(?꾩옱 援ъ꽦?먯꽌 誘몄궗?? 蹂댁〈)
+ ```
+ 
+ ```bash
+@@ -351,44 +377,40 @@ python tests/run_all.py -v       # 異쒕젰源뚯?
+ python tests/run_all.py adaptive # ?대쫫?쇰줈 怨⑤씪?? ```
+ 
+-?뚯뒪?몃뒗 `pytest` ?놁씠 ?쒖? ?쇱씠釉뚮윭由щ쭔?쇰줈 ?뺣땲?? `requirements.txt`留?源붾┛
+-?섍꼍(= ?덇꼍???щ씪媛??洹??섍꼍)?먯꽌 洹몃?濡??뚮젮???섍린 ?뚮Ц?낅땲??
++?뚯뒪???ㅽ뻾湲곕뒗 `pytest` ?놁씠 ?쒖? ?쇱씠釉뚮윭由щ줈 ?숈옉?⑸땲?? 媛쒕퀎 ?뚯뒪?몃뒗 ?ㅽ뻾쨌?숈뒿쨌?쒕쾭
++?섏〈?깆씠 ?꾩슂?섎ŉ, ?쇰? ?좏깮 ?섏〈?깆씠 ?놁쑝硫?嫄대꼫?곷땲?? ?꾩옱 湲곗? ?섍꼍? 媛쒕컻 ?명듃遺곸엯?덈떎.
+ 媛??뚯뒪?몃뒗 ?낅┰ ?꾨줈?몄뒪濡??ㅽ뻾?⑸땲?????щ윭 ?뚯뒪?멸? `config`瑜??꾩떆濡? 媛덉븘?쇱슦湲??뚮Ц?????꾨줈?몄뒪?먯꽌 紐곗븘 ?뚮━硫??쒕줈 ?ㅼ뿼?⑸땲??
+ 
+ ---
+ 
+-## ?ㅽ뻾 援ъ“ ??媛吏
++## ?ㅽ뻾 援ъ꽦怨??댁쟾 ?섎뱶?⑥뼱 寃쎈줈
+ 
+-### A. PC + 釉뚮━吏 MCU
++### ?꾩옱 援ъ꽦: ?명듃遺?+ ?대씪?곕뱶
+ 
+ ```
+-?명듃遺???USB ?쒕━?쇄?????꾨몢?대끂/Pico ??SPI????OLED
+-(鍮꾩쟾쨌STT쨌TTS ?꾨?)      (洹몃━湲곕쭔)
++?명듃遺?移대찓?셋룸쭏?댄겕
++  ?쒋? ?섏뼱 ?낅젰 ?????대씪?곕뱶 ?쒕쾭 ?????쒓뎅??臾몄옣 ????TTS쨌?명듃遺??ㅽ뵾而?+  ?붴? STT + ?쇨뎬 異붿쟻 ?????곸긽 留먰뭾??/ ???湲곕줉 / OLED 蹂꾨룄 誘몃━蹂닿린
+ ```
+ 
+-PC?먮뒗 SPI ?ы듃媛 ?놁뼱??釉뚮━吏媛 ?꾩슂?⑸땲?? ?깅뒫? ?ъ쑀濡??留??덇꼍???명듃遺곸뿉 USB濡?臾띠엯?덈떎.
+-`--display serial` / `requirements.txt` / `firmware/oled_bridge.ino`
++?ㅽ뻾 ?섍꼍? `requirements.txt`, 湲곕낯 ?붿뒪?뚮젅?대뒗 `--display preview`?낅땲??
++?곸긽 留먰뭾?좊쭔 蹂대젮硫?`--display null --video-captions`濡??좏깮?????덉뒿?덈떎.
++???듭뀡? OLED 誘몃━蹂닿린 李쎌쓣 ?④만 肉?愿??肄붾뱶瑜???젣?섏? ?딆뒿?덈떎.
+ 
+-### B. ?쇱쫰踰좊━?뚯씠 ?⑤낫??(吏꾩쭨 ?⑥뼱?щ툝)
++?대????곕룞? ?ㅼ쓬 ?대씪?댁뼵???꾨낫?대ŉ ?꾩쭅 援ы쁽?섏? ?딆븯?듬땲?? ?덇꼍? ?낅젰쨌?쒖떆 ?μ튂濡?+?곕룞?섎뒗 諛⑺뼢??寃?좏븯怨? VLM? ?대씪?곕뱶?먯꽌 ?ㅽ뻾?⑸땲?? ?ㅼ젣 OLED ?⑤꼸? 蹂꾨룄 援щ룞
++?명꽣?섏씠?ㅺ? ?꾩슂?섎?濡? ?곌껐 諛⑹떇???뺤젙?섍린 ???명듃遺겶룻쑕??곗뿉 諛붾줈 ?곌껐?쒕떎怨?媛?뺥븯吏 ?딆뒿?덈떎.
+ 
+-```
+-Pi ??SPI(GPIO)????OLED
+-(?꾨? Pi ?먯꽌)
+-```
++### ?댁쟾 ?섎뱶?⑥뼱 寃쎈줈: 肄붾뱶留?蹂댁〈, ?꾩옱 ?ъ슜 怨꾪쉷 ?놁쓬
+ 
+-**釉뚮━吏 MCU???뚯썾?대룄 ?꾩슂 ?놁뒿?덈떎.** `--display pi` / `requirements-pi.txt`
++| 蹂댁〈??寃쎈줈 | 愿???뚯씪쨌?듭뀡 | ?꾩옱 痍④툒 |
++|---|---|---|
++| PC ??Arduino/Pico ??OLED | `--display serial`, `firmware/oled_bridge.ino` | ?꾩옱 援ъ꽦쨌援щℓ쨌?쒖뿰???ы븿?섏? ?딆쓬 |
++| Pi GPIO ??OLED | `--display pi`, `requirements-pi.txt` | ?꾩옱 援ъ꽦쨌援щℓ쨌?쒖뿰???ы븿?섏? ?딆쓬 |
+ 
+-> **??Pi?먯꽌??mediapipe 踰꾩쟾???ㅻ쫭?덈떎.**
+-> `mediapipe==0.10.21`? Linux aarch64 ?좎씠 **?놁뼱??* Pi?먯꽌 `pip install` ?먯껜媛 ?ㅽ뙣?⑸땲??
+-> `0.10.15`?먮뒗 aarch64 ?좎씠 cp39~cp312濡??덇퀬, `solutions.holistic`????젣??嫄?0.10.31遺?곕씪
+-> ?덉쟾 援ш컙?낅땲?? `requirements-pi.txt`媛 ?닿구 泥섎━?⑸땲??
+->
+-> **???꾨젅?꾨젅?댄듃媛 ?⑥뼱吏硫?議곗슜??臾대꼫吏묐땲??**
+-> ?명듃遺?30fps濡??숈뒿??紐⑤뜽??Pi 10fps?먯꽌 ?뚮━硫?30?꾨젅?꾩씠 1珥덇? ?꾨땲??**3珥?*媛 ?⑸땲??
+-> 媛숈? ?섏뼱?몃뜲 紐⑤뜽??蹂대뒗 ?쒓컙 異뺤씠 3諛곌? ?섍퀬, ?먮윭???섎굹?????⑸땲??
+-> `config.ADAPTIVE_WINDOW = True`(湲곕낯媛?媛 '理쒓렐 30?꾨젅?? ???**'理쒓렐 1.0珥덈? 30媛쒕줈
+-> 由ъ깦??**?댁꽌 ?닿구 留됱뒿?덈떎.
++?댁쟾 ?섎뱶?⑥뼱 ?곌껐 肄붾뱶? OLED 蹂꾨룄 誘몃━蹂닿린????젣?섏? ?딆뒿?덈떎. 愿???ㅼ튂쨌諛곗꽑 ?덉감??+?꾩옱 ??먯쓽 ?꾩닔 以鍮??ы빆???꾨땲硫? ?ㅼ젣 ?붿뒪?뚮젅???곌껐 諛⑹떇??寃곗젙?섎㈃ ?ㅼ떆 寃?좏빀?덈떎.
+ 
+ ---
+ 
+@@ -405,8 +427,8 @@ Pi ??SPI(GPIO)????OLED
+ | **3???뺤젙 (?꾧퀎媛??ㅼ닔寃?荑⑤떎??** | ??踰덉쓽 ?믪? ?좊ː?꾨줈 諛쒗솕?섎㈃ ?먯씠 吏?섍?湲곕쭔 ?대룄 留먯쓣 ?⑸땲??|
+ | **NEUTRAL ?대옒???꾩닔** | ?놁쑝硫?媛留뚰엳 ?덉뼱???꾨Т ?⑥뼱??諭됱뒿?덈떎. ?꾩껜 ?곗씠?곗쓽 20~25%瑜??ш린??|
+ | **PhraseBuilder 吏??諛쒗솕** | 利됱떆 諛쒗솕?섎㈃ "?대쫫" ?ㅼ뿉 "?대쫫??萸먯삁??"媛 ???섏? ??踰??ㅻ┰?덈떎 |
+-| **TTS ?ъ쟾 罹먯떛** | ?댄쐶媛 怨좎젙?대씪 wav瑜?誘몃━ 戮묒븘?????덉뒿?덈떎. 吏??0ms 쨌 ?명꽣??遺덊븘??쨌 ?쒖뿰 ?ㅽ뙣 0 |
+-| **諛섏씠以?寃뚯씠??* | ?ㅽ뵾而ㅼ? 留덉씠?ш? ?덇꼍????紐?cm. ?놁쑝硫??먭린 留먯씠 ?곷? ?먮쭑?쇰줈 ?④퀬 臾댄븳 猷⑦봽源뚯? 媛묐땲??|
++| **TTS ?ъ쟾 罹먯떛** | 怨좎젙 ?쒖뿰 臾몄옣? WAV瑜??ъ궗?⑺빐 ?⑹꽦 ?湲곕? 以꾩엯?덈떎. ?먯쑀 ?앹꽦 臾몄옣? ?숈쟻 TTS媛 ?꾩슂?섎ŉ, ?ъ깮 吏?걔룹떎??媛?μ꽦? 蹂꾨룄 寃利앺빀?덈떎 |
++| **諛섏씠以?寃뚯씠??* | ?명듃遺곸씠???덇꼍?먯꽌 ?ㅽ뵾而?異쒕젰??留덉씠?щ줈 ?ㅼ떆 ?ㅼ뼱?ㅻ뒗 ?먮쭑 ?먯퐫瑜?李⑤떒?⑸땲??|
+ | **local ?몄떇 ?ㅽ뻾? ONNX** | torch 200MB / TF 600MB vs onnxruntime 50MB. cloud 寃쎈줈??CTC쨌?몄뼱 紐⑤뜽? ?쒕쾭?먯꽌 ?ㅽ뻾?⑸땲??|
+ | **One Euro Filter** | ?대룞?됯퇏? 遺?쒕읇寃??좎닔濡?吏?곗씠 洹몃?濡??섏뼱?⑸땲?? AR ?ㅻ쾭?덉씠 ?쒖? |
+ | **?붿옄 ?⑥쐞 ?됯?** | ?쒗???⑥쐞濡??욎쑝硫?"97%?몃뜲 ?⑥씠 ?섎㈃ 30%"媛 ?섏샃?덈떎 |
+@@ -518,17 +540,16 @@ python tools/evaluate.py --split group             # 諛고룷?섎뒗 洹??뚯씪?? | `python main.py --sign-camera 0 --face-camera 1` | ?섑뼢 ?섏뼱/?꾨갑 ?쇨뎬 ??移대찓???듯빀 |
+ | `python main.py --stats` | 吏?곗쓣 援ш컙蹂꾨줈 痢≪젙??醫낅즺 ??p50/p95 異쒕젰 |
+ | `python main.py --stats out.csv` | ??+ ?먮낯 ?쒕낯??CSV濡?(蹂닿퀬??洹몃옒?꾩슜) |
+-| `python main.py --display pi` | ?쇱쫰踰좊━?뚯씠 GPIO 吏곴껐 OLED |
+ | `python main.py --no-gate` | 諛섏씠以??댁젣 (?좎꽑 ?댁뼱?곗쑝濡??ㅼ쓣 ?뚮쭔) |
+ | `python tools/demo.py --record demo.mp4` | ?곕え ?쒕굹由ъ삤 ?ъ깮쨌?뱁솕 |
+ | `python tools/check_mount.py --duration 30 --preview` | ?μ갑 ?쒖젏 ???쇨뎬 寃異쒕쪧 痢≪젙 |
+ | `python tools/compare_features.py` | ?뱀쭠 援ъ꽦(2D/3D/?뺢퇋??蹂??먯떎 諛??깅뒫 鍮꾧탳 |
+-| `python -m src.calibrate --display serial` | ?ㅼ젣 OLED ?쒖감 蹂댁젙 (Pi??`--display pi`) |
+-| `python -m src.hud` | 留먰뭾???덉씠?꾩썐 誘몃━蹂닿린 |
++| `python -m src.hud` | 蹂댁〈??OLED 留먰뭾???덉씠?꾩썐 誘몃━蹂닿린 |
+ | `python tests/run_all.py` | ?뚭? ?뚯뒪??53醫??꾩껜 ?ㅽ뻾 |
+ 
+-`DISPLAY_BACKEND = "preview"`硫?**?섎뱶?⑥뼱 ?놁씠** HUD ?덉씠?꾩썐쨌醫뚰몴 留ㅽ븨쨌媛?낆꽦??-?꾨? 寃利앸맗?덈떎. Phase 1쨌2瑜?0?먯쑝濡??앸궪 ???덈뒗 吏?먯엯?덈떎.
++`DISPLAY_BACKEND = "preview"`硫?異붽? ?붿뒪?뚮젅???섎뱶?⑥뼱 ?놁씠 OLED 蹂꾨룄 誘몃━蹂닿린瑜?+?ъ슜?????덉뒿?덈떎. ?뚰봽?몄썾???덉씠?꾩썐? ?뺤씤?????덉?留??ㅼ젣 愿묓븰 ?뺣젹쨌李⑹슜 媛?낆꽦?
++?ㅻЪ 寃利앹씠 ?꾩슂?⑸땲?? ?대씪?곕뱶 GPU쨌API 鍮꾩슜? 蹂꾨룄濡?怨꾩궛?⑸땲??
+ 
+ ### 移대찓???곸긽 ???ㅼ떆媛?留먰뭾?? 
+@@ -546,7 +567,7 @@ python main.py --no-sign --display preview --no-video-captions
+ `preview` 異쒕젰?먯꽌 ?쇨뎬 移대찓?쇰? ?ъ슜?섎㈃ ?곸긽 留먰뭾??李쎈룄 湲곕낯 ?쒖꽦?붾맗?덈떎.
+ `--fixed-caption`? 移대찓???녿뒗 怨좎젙 ?먮쭑 寃쎈줈瑜??좎??⑸땲?? 蹂꾨룄 ?쇨뎬 移대찓?쇰?
+ ?곕㈃ 留먰뭾?좎? 洹??곸긽 ?꾩뿉 ?쒖떆?섎ŉ, ??移대찓?쇱뿉?쒕뒗 誘몃윭留곷맂 ?곸긽怨??쇨뎬
+-醫뚰몴瑜??④퍡 ?ㅼ쭛?듬땲?? ?ㅼ젣 OLED??湲곗〈 ?쒖빞/愿묓븰 蹂댁젙 醫뚰몴瑜??ъ슜?⑸땲??
++醫뚰몴瑜??④퍡 ?ㅼ쭛?듬땲?? OLED 蹂꾨룄 誘몃━蹂닿린??湲곗〈 ?쒖빞/愿묓븰 蹂댁젙 醫뚰몴瑜??좎??⑸땲??
+ 
+ - ?쇨뎬 ??紐낆쓣 湲곗??쇰줈 怨듦컙 異붿쟻 ID瑜?留뚮뱾怨? 媛?諛쒗솕??泥??몄떇 寃곌낵瑜?   ?대떦 ?쒓컖???좏깮??ID???곌껐?⑸땲?? 泥섏쓬遺???щ윭 ?쇨뎬??蹂댁씠硫??섎떒 ?먮쭑??@@ -656,8 +677,5 @@ python tools/prepare_aihub3d.py data/raw/New_sample --out data/processed/aihub3d
+   ?ㅻ쫭?덈떎. ???μ갑 ?쒖젏?쇰줈 ?섏쭛?섍퀬, 紐⑤뜽??`feature_version` 寃?щ? ?듦낵?쒖폒???⑸땲??
+ - **?쒖감 蹂댁젙? 愿묓븰 寃고빀湲곕? ???뚮쭔 ?섎?媛 ?덉뒿?덈떎.** 吏곸떆?뺤씠硫?`calibrate.py`媛
+   ?ъ떎???寃??⑸땲??
+-- **`--display serial`???꾨몢?대끂 Uno/Nano濡?????*, ?뚯썾?대뒗 ?꾨젅?꾨쾭?쇱뿉 吏곸젒
+-  ?섏떊?섎룄濡??섏뼱 ?덉뼱???⑸땲??蹂꾨룄 1KB 踰꾪띁瑜??먮㈃ ATmega328P??SRAM 2KB瑜??섍퉩?덈떎).
+-  ?꾩옱 `firmware/oled_bridge.ino`??洹몃젃寃??섏뼱 ?덉뒿?덈떎.
+-- **愿묓븰?⑹쑝濡쒕뒗 2.42?몄튂 SSD1309瑜?沅뚰빀?덈떎.** 0.96?몄튂? 媛숈? 128횞64쨌媛숈? ?쒕씪?대쾭??-  **肄붾뱶 蹂寃쎌씠 ?꾪? ?녾퀬**, ?쎌???而ㅼ꽌 愿묓븰 ?뺣젹???⑥뵮 ?쎄퀬 諛앹뒿?덈떎.
++- **?ㅻЪ OLED 洹쒓꺽? 誘명솗?뺤엯?덈떎.** ?꾩옱 蹂댁〈???뚮뜑??룻뙣?뱀? 128횞64 SSD1306/SSD1309
++  湲곗??낅땲?? ?ㅻⅨ ?댁긽?꽷룹빻?몃·???⑤꼸? ?쒕씪?대쾭쨌?꾨젅?꾨쾭???명솚 ?뺤씤???꾩슂?⑸땲??
+diff --git a/REVIEW_AND_PLAN.md b/REVIEW_AND_PLAN.md
+index 41f8d6d..e1c29b9 100644
+--- a/REVIEW_AND_PLAN.md
++++ b/REVIEW_AND_PLAN.md
+@@ -1,5 +1,9 @@
+ # signglass ?꾩껜 寃??諛?媛쒖꽑 怨꾪쉷 ??2026-10-12
+ 
++?꾩옱 ?섎뱶?⑥뼱 諛⑺뼢? [README](README.md#?꾩옱-媛쒕컻-諛⑺뼢)瑜??곕Ⅸ?? 蹂몃Ц??Pi ?깅뒫쨌?섏〈??+?멸툒? 珥덇린 寃???대젰?대ŉ ?꾩옱 ?쒖뿰쨌援щℓ ?붽뎄 ?ы빆???꾨땲?? ?꾩옱 ?대씪?댁뼵?몃뒗 ?명듃遺?
++?쒕쾭 援ы쁽? CTC? ?띿뒪???몄뼱 紐⑤뜽 湲곗??좎씠硫?Qwen2.5-VL? 蹂꾨룄濡??곌껐???덉젙?대떎.
++
+ 寃??湲곗?: `main` 釉뚮옖移?而ㅻ컠 `f43e0a2`. 肄붾뱶쨌臾몄꽌쨌?섏〈???꾩껜瑜??쎄퀬, ?깅뒫???ㅼ륫?섍퀬,
+ ?몃? ?먮즺(AI Hub, vLLM 臾몄꽌, 紐⑤뜽 移대뱶)瑜??뺤씤?덈떎. ??臾몄꽌??**怨꾪쉷**?대ŉ 肄붾뱶 蹂寃쎌? ?ы븿?섏? ?딅뒗??
+ 
+@@ -357,10 +361,10 @@ M4?먯꽌 ?꾩옱 ?ш린??CTC 紐⑤뜽? 鍮좊Ⅴ寃??ㅽ뻾?먭퀬, ?낅젰 ?꾩넚?? 1. **?명꽣??** ?ㅼ젣 ?쒕쾭 ?뺣났 吏?곌낵 ?⑥젅 鍮덈룄???대뼡媛? ?ㅽ봽?쇱씤 踰덉뿭???꾩닔?몄?, ?ъ엯???덈궡媛 媛?ν븳吏 ?뺥븳??
+ 2. **臾몄옣 踰붿쐞:** 寃??臾몄옣 踰붿쐞? ?덈줈??議고빀???됯? 踰붿쐞瑜??뺥븳?? ?곗씠??吏????怨좊┰ ?⑥뼱 ?쒖뿰?쇰줈 踰붿쐞瑜?以꾩씪吏??紐낆떆?곸쑝濡?寃곗젙?쒕떎.
+ 3. **?먮룞 諛쒗솕:** ?쇱긽 ?숈옉 600珥??댁긽 蹂댁젙怨??섎? 寃?섎? ?꾧? ?몄젣 ?섑뻾?좎? ?뺥븳?? 誘몄땐議???誘몃━蹂닿린濡??쒖뿰?섎ŉ 寃??臾몄옣?대씪???댁쑀濡?硫댁젣?섏? ?딅뒗??
+-4. **理쒖쥌 ?곗궛遺:** ?덇꼍 Pi ?⑤룆 / ?대????곕룞 / ?명듃遺?
++4. **?대씪?댁뼵???곗궛遺:** ?꾩옱 ?명듃遺??쒖뿰, ?대????곕룞? ?꾩냽 寃?? VLM? ?대씪?곕뱶?먯꽌 ?ㅽ뻾?섎ŉ Pi ?⑤룆 寃쎈줈???꾩옱 援ъ꽦?먯꽌 ?쒖쇅?쒕떎.
+ 5. **?쇨뎬(鍮꾩닔吏 ?쒗쁽):** ?뱀틺?먯꽌???섏뼱??蹂몄씤 ?쇨뎬??蹂댁뿬 ?섎Ц쨌遺???쒗쁽???????덈떎.
+    吏湲?怨꾩빟? ?쇨뎬??類???덇꼍? ?곷? ?쇨뎬??李띿쓣 ???덉뼱??. ?쒖젏蹂꾨줈 ?ㅻⅤ寃?媛덉? ?뺥븳??
+-6. **STT:** vosk-small-ko???⑹꽦?뚯꽦?먯꽌???ㅼ씤?앹씠 蹂닿퀬?먮떎. sherpa-onnx ?쒓뎅???ㅽ듃由щ컢 紐⑤뜽 媛숈? ??덇낵 媛숈? ?뱀쓬?쇰줈 CER??鍮꾧탳?좎?.
++6. **STT:** ?꾩옱 湲곕낯媛믪? sherpa-onnx ?쒓뎅???ㅽ듃由щ컢 Zipformer?대ŉ Vosk???泥?寃쎈줈?? ?ㅼ젣 ????뱀쓬?쇰줈 CER쨌?먮쭑 吏?곗쓣 鍮꾧탳?쒕떎.
+ 7. **?곗씠???쒓린:** AI Hub ?댁슜 議곌굔 ?뺤씤怨?諛쒗몴 ?먮즺???곗씠??異쒖쿂 ?쒓린.
+ 
+ ---
+diff --git a/TEST_CHECKLIST.md b/TEST_CHECKLIST.md
+index eb5cca5..0721a6d 100644
+--- a/TEST_CHECKLIST.md
++++ b/TEST_CHECKLIST.md
+@@ -13,6 +13,22 @@ Git?먮뒗 ?щ━吏 ?딆뒿?덈떎.
+ - ?쒕쾭媛 ?⑤㈃ `curl -H "Authorization: Bearer $SIGN_SERVER_TOKEN" $SIGN_SERVER_URL/health`濡?   ?뺤씤?⑸땲?? 蹂?媛믪? `recognizer_ready`, `device_model_ready`, `data_sources`?낅땲??
+ 
++## 0-1. ?쒖뿰 ?명듃遺곸씠 ?먮━嫄곕굹 ?딄만 ??+
++李쎌쓣 ?꾩슦吏 ?딄퀬 ?대뵒媛 ?먮┛吏 ?レ옄濡?遊낅땲??
++
++~~~bash
++python tools/profile_pipeline.py --camera 0 --compare-formats --out reports/profile.json
++~~~
++
++- 移대찓?쇨? ?ㅼ젣濡?珥덈떦 紐??μ쓣 二쇰뒗吏 ?섏샃?덈떎. ?뺤텞 ?뺤떇 MJPG瑜??붿껌?덉쓣 ?뚯? ?쒕씪?대쾭 湲곕낯???뚮? 鍮꾧탳?⑸땲??
++- ?④퀎蹂?泥섎━ ?쒓컙怨?"vision max fps"媛 ?섏샃?덈떎.
++- 寃곌낵??留욎떠 ???쇰룄 異쒕젰?⑸땲??
++  - 移대찓?쇨? ?먮━硫? 議곕챸??諛앷쾶 ?섍퀬, USB 蹂몄껜 ?ы듃瑜??곷땲??
++  - CPU媛 ?먮━硫? ?꾩썝???곌껐?섍퀬, ?덈룄???꾩썝 紐⑤뱶瑜?"理쒓퀬 ?깅뒫"?쇰줈 諛붽씀怨? 釉뚮씪?곗?瑜??リ퀬, `config.STT_THREADS = 1`濡?以꾩엯?덈떎.
++- MJPG媛 ?ㅽ엳?????섎뒗 移대찓?쇰씪硫?`config.CAM_FOURCC = None`?쇰줈 ?섎룎由쎈땲??
++- ?ㅼ젣 ?ㅽ뻾 以??④퀎蹂??쒓컙? `python main.py ... --stats`濡?遊낅땲?? `video_overlay`, `holistic`, `capture` ??ぉ???뺤씤?섏꽭??
++
+ ## 1. ?섎? 寃?? 
+ 寃?섑븷 臾몄옣? 吏湲??쒖뿰 ?댄쐶(`config.VOCAB`, ?쒓뎅???⑥뼱 湲濡쒖뒪)濡?留뚮벊?덈떎. 寃???뚯씪? 紐⑤몢
+diff --git a/check_env.py b/check_env.py
+index df1fbcd..95f3cfe 100644
+--- a/check_env.py
++++ b/check_env.py
+@@ -46,7 +46,7 @@ def section(title):
+     print(f"\n?? {title} " + "?" * max(0, 50 - len(title)))
+ 
+ 
+-# ---------------------------------------------------------------- 0. ?쒖뒪??+# 0. ?쒖뒪?? def check_python():
+     section("0. ?뚯씠??)
+     v = sys.version_info
+@@ -62,7 +62,7 @@ def check_python():
+         )
+ 
+ 
+-# ------------------------------------------------------- 1. ?듭떖 ?쇱씠釉뚮윭由?+# 1. ?듭떖 ?쇱씠釉뚮윭由? def check_core():
+     section("1. ?듭떖 ?쇱씠釉뚮윭由?)
+ 
+@@ -81,9 +81,6 @@ def check_core():
+             )
+     except ImportError:
+         fail("numpy ?놁쓬", "pip install -r requirements.txt")
+-        # ???덉쟾?먮뒗 ?ш린??return ?댁꽌 ?꾨옒 mediapipe/opencv 寃?ш?
+-        #   ?꾨? ?앸왂?먯뒿?덈떎. numpy 媛 ?놁뼱???섎㉧吏??怨꾩냽 寃?ы빀?덈떎.
+-        #   (mediapipe ??numpy 瑜??꾩슂濡??섎?濡??꾨옒?먯꽌 ?ㅼ떆 ?ㅽ뙣濡??≫옓?덈떎)
+ 
+     # mediapipe: solutions.holistic 議댁옱 ?щ?媛 ???꾨줈?앺듃???앸챸以?     try:
+@@ -112,7 +109,7 @@ def check_core():
+     except ImportError:
+         fail("opencv ?놁쓬", "mediapipe ?ㅼ튂 ???먮룞?쇰줈 源붾┰?덈떎. ?ㅼ튂 濡쒓렇瑜??뺤씤?섏꽭??)
+ 
+-    # onnxruntime: ?덇꼍?먯꽌 ?ㅼ젣濡?紐⑤뜽???뚮━???좎씪???고???+    # ONNX 湲곕컲 濡쒖뺄 ?몄떇 寃쎈줈?먯꽌 ?ъ슜?⑸땲??
+     try:
+         import onnxruntime as ort
+ 
+@@ -145,7 +142,7 @@ def check_core():
+         warn("pillow ?놁쓬")
+ 
+ 
+-# ------------------------------------------------------------- 2. ?ㅻ뵒??SW
++# 2. ?ㅻ뵒??SW
+ def check_audio_libs():
+     section("2. ?ㅻ뵒??/ ?뚯꽦 ?쇱씠釉뚮윭由?)
+ 
+@@ -188,12 +185,12 @@ def check_audio_libs():
+     try:
+         import serial  # noqa: F401
+ 
+-        ok("pyserial (Step 2 OLED 釉뚮━吏??")
++        ok("pyserial (?댁쟾 OLED 釉뚮━吏 寃쎈줈??")
+     except ImportError:
+-        warn("pyserial ?놁쓬 - Step 2 ?먯꽌 ?꾩슂")
++        warn("pyserial ?놁쓬 - ?댁쟾 OLED 釉뚮━吏 寃쎈줈?먯꽌留??꾩슂")
+ 
+ 
+-# --------------------------------------------------------- 3. 移대찓???ㅼ륫
++# 3. 移대찓???ㅼ륫
+ def check_camera():
+     section("3. 移대찓???ㅼ륫")
+     try:
+@@ -232,7 +229,7 @@ def check_camera():
+         warn(f"{w}x{h} ???쇨뎬 ?꾩튂 ?뺣??꾧? ?⑥뼱吏????덉뒿?덈떎 (Phase 2)")
+ 
+ 
+-# ------------------------------------------------- 4. Holistic 異붾줎 ?띾룄
++# 4. Holistic 異붾줎 ?띾룄
+ def check_holistic_speed():
+     section("4. Holistic 異붾줎 ?띾룄 (CPU)")
+     try:
+@@ -262,7 +259,7 @@ def check_holistic_speed():
+         fail(f"Holistic ?ㅽ뻾 ?ㅽ뙣: {e}")
+ 
+ 
+-# ---------------------------------------------------------- 5. 留덉씠???ㅼ륫
++# 5. 留덉씠???ㅼ륫
+ def check_mic():
+     section("5. 留덉씠???ㅼ륫 (2珥??뱀쓬)")
+     try:
+@@ -293,7 +290,7 @@ def check_mic():
+         fail(f"留덉씠???뚯뒪???ㅽ뙣: {e}")
+ 
+ 
+-# ------------------------------------------------------- 6. ?쒓뎅??TTS
++# 6. ?쒓뎅??TTS
+ def check_tts():
+     section("6. ?쒓뎅??TTS")
+     try:
+@@ -320,7 +317,7 @@ def check_tts():
+         warn(f"pyttsx3 ?ㅽ뙣: {e}", "edge-tts ?ъ쟾 罹먯떛 諛⑹떇?쇰줈 ?泥?媛?ν빀?덈떎")
+ 
+ 
+-# --------------------------------------------------------- 7. ?ㅽ뻾 ?곗텧臾?+# 7. ?ㅽ뻾 ?곗텧臾? def check_artifacts():
+     section("7. ??援ш컙 ?ㅽ뻾 ?곗텧臾?)
+ 
+@@ -371,10 +368,10 @@ def check_artifacts():
+         ok(f"HUD ?쒓? ?고듃: {C.HUD_FONT.name}")
+     else:
+         warn(f"HUD ?쎌? ?고듃 ?놁쓬: {C.HUD_FONT}",
+-             "?ㅻЪ OLED ?꾩뿉 ?쒓? ??댁긽???고듃瑜??ｊ퀬 媛?낆꽦???뺤씤?섏꽭??)
++             "assets/fonts/???쒓? ?고듃瑜??ｊ퀬 誘몃━蹂닿린?먯꽌 媛?낆꽦???뺤씤?섏꽭??)
+ 
+ 
+-# ------------------------------------------------------------------ main
++# main
+ def main():
+     p = argparse.ArgumentParser()
+     p.add_argument("--no-camera", action="store_true")
+diff --git a/config.py b/config.py
+index fdd73b4..7c42dec 100644
+--- a/config.py
++++ b/config.py
+@@ -31,9 +31,7 @@ SESSION_ID = "session1"
+ IS_MAC = platform.system() == "Darwin"
+ IS_WIN = platform.system() == "Windows"
+ 
+-# ============================================================
+ # 1. ?댄쐶
+-# ============================================================
+ # 洹쒖튃 4媛吏:
+ #   1) ??紐⑥뼇???쒕줈 ?뺤떎???ㅻ? 寃? #   2) ?뺤쟻 ?섑삎???꾨땲??沅ㅼ쟻???덉쓣 寃?(LSTM ???μ젏)
+@@ -70,9 +68,7 @@ PHRASE_RULES = [
+     (("紐⑤Ⅴ寃좎뼱??,), "??紐⑤Ⅴ寃좎뼱??"),
+ ]
+ 
+-# ============================================================
+ # 2. ?쒗??/ 異붾줎
+-# ============================================================
+ SEQ_LEN = 30            # 紐⑤뜽??諛쏅뒗 ?쒗??湲몄씠(?꾨젅??
+ STRIDE = 5              # 5?꾨젅?꾨쭏??異붾줎 -> 泥닿컧 吏??1000ms 瑜?170ms 濡? 
+@@ -86,7 +82,7 @@ TRAIN_FPS = 30
+ #   ?명듃遺?30fps 濡??ㅽ뻾???뚮뒗 ?닿쾶 ?뺥솗?⑸땲??
+ #
+ #   True 硫?'理쒓렐 1.0珥?瑜?紐⑥븘 30媛쒕줈 由ъ깦?뚰빐???ｌ뒿?덈떎.
+-#   ?쇱쫰踰좊━?뚯씠泥섎읆 10fps 諛뽰뿉 ???섏삤??湲곌린?먯꽌 諛섎뱶???꾩슂?⑸땲??
++#   ?꾨젅?꾨젅?댄듃媛 ??? 湲곌린?먯꽌 ?꾩슂?⑸땲??
+ #   ??耳쒕㈃ 30?꾨젅?꾩씠 1珥덇? ?꾨땲??3珥덇? ?섏뼱, 媛숈? ?섏뼱?몃뜲 紐⑤뜽??蹂대뒗
+ #   ?쒓컙 異뺤씠 3諛곕줈 ?섏뼱?⑸땲?? ?먮윭?????섍퀬 ?뺥솗?꾨쭔 臾대꼫吏묐땲??
+ ADAPTIVE_WINDOW = True
+@@ -97,14 +93,17 @@ COOLDOWN_SEC = 1.2      # 媛숈? ?⑥뼱 ?곗냽 諛쒗솕 諛⑹?(debounce)
+ 
+ SEQ_PER_LABEL = 40      # ?쇰꺼???섏쭛???쒗??媛쒖닔 (理쒖냼 30, 留롮쓣?섎줉 醫뗭쓬)
+ 
+-# ============================================================
+ # 3. 移대찓??-# ============================================================
+ CAM_INDEX = 0
+ CAM_W, CAM_H = 1280, 720
+ CAM_FPS = 30
+ MODEL_COMPLEXITY = 0    # 0 = 媛??鍮좊쫫. ?섏뼱 ?몄떇??異⑸텇?⑸땲?? MIRROR_PREVIEW = True   # ?꾨━酉곕쭔 醫뚯슦 諛섏쟾(???酉?. 醫뚰몴 怨꾩궛?먮뒗 ?곹뼢 ?놁쓬
++DEBUG_PREVIEW_W = 960   # ?붾쾭洹?移대찓??李?理쒕? ?? ??李쎌? 留??꾨젅??洹몃━湲곌? 鍮꾩뙃?덈떎
++VIDEO_OVERLAY_FPS = 30  # 留먰뭾???곸긽 李쎌쓣 ?ㅼ떆 洹몃━??理쒕? ?잛닔(珥덈떦)
++# 移대찓???뺤텞 ?뺤떇. 留롮? ?명듃遺?移대찓?쇨? ?뺤텞 ?놁씠(YUY2)??1280x720 ??珥덈떦
++# 10?κ퉴吏留?蹂대깄?덈떎. MJPG 瑜??붿껌?섎㈃ 蹂댄넻 30?? ??留욌뒗 移대찓?쇰뒗 None.
++CAM_FOURCC = "MJPG"
+ # ?섏뼱 移대찓???쒖젏. "webcam" = ?명듃遺??뱀틺 ?뺣㈃(?쒖뿰), "glasses" = ?덇꼍 1?몄묶(?닿묠媛 ?섎┝).
+ # --auto-segment 洹쒖튃???щ씪吏묐땲?? main.py --viewpoint 濡?諛붽? ???덉뒿?덈떎.
+ SIGN_VIEWPOINT = "webcam"
+@@ -129,24 +128,21 @@ def camera_backend():
+         return cv2.CAP_AVFOUNDATION
+     return cv2.CAP_ANY
+ 
+-# ============================================================
+ # 4. ?ㅻ뵒??/ STT
+-# ============================================================
+ AUDIO_RATE = 16000
+ AUDIO_BLOCK = 4000      # vosk 沅뚯옣 釉붾줉
+ VAD_AGGRESSIVENESS = 2  # 0(愿?) ~ 3(?꾧꺽)
+ STT_ENDPOINT_MS = 600   # ?대쭔??臾댁쓬???댁뼱吏硫?諛쒗솕 醫낅즺濡?蹂닿퀬 ?뺤젙
+ STT_BACKEND = "sherpa"   # "sherpa" | "vosk". tools/compare_stt.py 濡?媛숈? ?뱀쓬 鍮꾧탳
++STT_THREADS = 2         # ?뚯꽦 ?몄떇???곕뒗 CPU ?ㅻ젅?? ?먮┛ ?명듃遺곸뿉??1 ?대㈃ ?곸긽 泥섎━? ???ㅽ댙?덈떎
+ TTS_VOICE = "ko-KR-SunHiNeural"   # edge-tts 罹먯떆 ?앹꽦?? 
+ # 諛섏씠以?half-duplex) 寃뚯씠?? # ?ㅽ뵾而ㅻ줈 ?섍컙 TTS ?뚯꽦??留덉씠?ш? ?ㅼ떆 二쇱썙???먮쭑?쇰줈 ?꾩슦??-# ?먯퐫 猷⑦봽瑜?留됱뒿?덈떎. ?닿굅 ?놁쑝硫??쒖뿰?먯꽌 100% ?곗쭛?덈떎.
++# TTS 異쒕젰??留덉씠???낅젰?쇰줈 ?섎룎?꾩삤???먯퐫 猷⑦봽瑜?以꾩엯?덈떎.
+ AUDIO_GATE_TAIL_SEC = 0.4   # TTS ?앸궃 ?????쒓컙留뚰겮 ??留덉씠?щ? 留됱쓬
+ 
+-# ============================================================
+ # 5. HUD / ?붿뒪?뚮젅??-# ============================================================
+ OLED_W, OLED_H = 128, 64
+ HUD_FONT = FONT_DIR / "Galmuri11.ttf"   # ??댁긽???쒓? ?쎌? ?고듃
+ HUD_FONT_SIZE = 11
+@@ -176,13 +172,9 @@ HUD_CALIB_SCALE = (1.0, 1.0)
+ FILTER_MIN_CUTOFF = 1.0
+ FILTER_BETA = 0.02
+ 
+-# ============================================================
+ # 6. ?붿뒪?뚮젅??諛깆뿏??-# ============================================================
+-#   "preview" : PC 李쎌뿉 6諛??뺣? (?섎뱶?⑥뼱 0?? Step 1~2)
+-#   "serial"  : PC + ?꾨몢?대끂/Pico 釉뚮━吏 寃쎌쑀 ?ㅼ젣 OLED (Step 3)
+-#   "pi"      : ?쇱쫰踰좊━?뚯씠 GPIO 吏곴껐 (釉뚮━吏 MCU 遺덊븘??
+-#   "null"    : 異쒕젰 ?놁쓬
++# preview???명듃遺??쒕??덉씠?? serial/pi??蹂댁〈???댁쟾 ?섎뱶?⑥뼱 寃쎈줈?낅땲??
++# null? 異쒕젰???뺣땲??
+ DISPLAY_BACKEND = "preview"
+ SERIAL_PORT = None      # None ?대㈃ ?먮룞 ?먯깋 (COM3 / /dev/cu.usbmodem...)
+ SERIAL_BAUD = 921600
+diff --git a/main.py b/main.py
+index 02f9713..a84f3aa 100644
+--- a/main.py
++++ b/main.py
+@@ -60,16 +60,17 @@ def draw_segment_overlay(cv2, frame, recorder, segmenter):
+     cv2.putText(frame, mode + state, (w - 200, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+ 
+ 
+-# ---------------------------------------------------------------- 鍮꾩쟾 ?ㅻ젅??+# 鍮꾩쟾 ?ㅻ젅?? class VisionThread(threading.Thread):
+     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
+                  segment_recorder=None, pose_3d=False, segmenter=None, segment_events=None,
+-                 track_face=True):
++                 track_face=True, preview_hands=False):
+         # daemon ???대옒???띿꽦?쇰줈 ?먮㈃ Thread.daemon ?꾨줈?쇳떚瑜?媛?ㅼ꽌
+         # ?대? _daemonic ?뚮옒洹몄? ?닿툔?⑸땲?? ?앹꽦?먮줈 ?섍꺼???덉쟾?⑸땲??
+         super().__init__(name="vision", daemon=True)
+         self.out = out_q
+         self.enable_sign = enable_sign
++        self.preview_hands = preview_hands
+         self.camera_index = camera_index
+         self.segment_recorder = segment_recorder
+         self.pose_3d = pose_3d
+@@ -98,11 +99,11 @@ class VisionThread(threading.Thread):
+             self.out.put(("error", "移대찓?쇰? ?????놁뒿?덈떎"))
+             return
+ 
+-        holistic = face_detector = None
++        holistic = face_detector = hand_detector = None
+         try:
+             holistic = (L.make_holistic(C.MODEL_COMPLEXITY)
+                         if self.enable_sign or self.segment_recorder is not None else None)
+-            face_detector = None
++            hand_detector = L.make_preview_hands() if self.preview_hands else None
+             if self.track_face:
+                 import mediapipe as mp
+                 face_detector = mp.solutions.face_detection.FaceDetection(
+@@ -136,10 +137,17 @@ class VisionThread(threading.Thread):
+                 t_hol = clock.now()
+                 if holistic is not None:
+                     st.add("holistic", (t_hol - t_cap) * 1000)
++
++                # ??誘몃━蹂닿린??Holistic怨?蹂꾨룄濡?泥섎━?⑸땲??
++                hand_res = hand_detector.process(rgb) if hand_detector is not None else None
++                if hand_res is not None:
++                    L.draw_hand_preview(frame, hand_res)
++
++                t_face = clock.now()
+                 face_boxes = (L.detection_face_boxes_px(face_detector.process(rgb), w, h)
+                               if face_detector is not None else [])
+                 if face_detector is not None:
+-                    st.add("face_detection", (clock.now() - t_hol) * 1000)
++                    st.add("face_detection", (clock.now() - t_face) * 1000)
+                 self.ms_vision = (clock.now() - t0) * 1000
+ 
+                 # Capture every processed frame before the lossy preview queue.
+@@ -185,6 +193,7 @@ class VisionThread(threading.Thread):
+                 self._emit(("frame", {
+                     "frame": frame, "face": face, "word": word,
+                     "face_boxes": face_boxes, "captured_at": t_cap,
++                    "hand_count": len(getattr(hand_res, "multi_hand_landmarks", None) or []),
+                     "word_t": word_t,
+                     "size": (w, h), "fps": self.fps,
+                     "in_fps": getattr(predictor, "last_fps", 0.0),
+@@ -202,6 +211,8 @@ class VisionThread(threading.Thread):
+                 holistic.close()
+             if face_detector is not None:
+                 face_detector.close()
++            if hand_detector is not None:
++                hand_detector.close()
+ 
+     def _emit(self, item):
+         """?먮? ?볦? ?딄퀬 ??긽 理쒖떊 ?꾨젅?꾨쭔 ?좎?."""
+@@ -292,7 +303,7 @@ def speak(sentence, tts, stats=None, word_t=0.0, show=None):
+         tts.say(sentence, origin_t=word_t)
+ 
+ 
+-# ---------------------------------------------------------------- main
++# main
+ def main():
+     ap = argparse.ArgumentParser()
+     ap.add_argument("--no-stt", action="store_true")
+@@ -338,8 +349,8 @@ def main():
+     a = ap.parse_args()
+     if a.recognize == "device" and not a.onnx:
+         ap.error("--recognize device ?먮뒗 --onnx 媛 ?꾩슂?⑸땲??)
+-    if a.sign_backend == "cloud" and not a.no_sign and a.cloud_controls == "keyboard":
+-        a.debug = True  # SPACE needs a visible OpenCV event window.
++    keyboard_cloud = (a.sign_backend == "cloud" and not a.no_sign
++                      and a.cloud_controls == "keyboard")
+ 
+     import cv2
+     from src.hud import HudContent, HudRenderer, load_calib
+@@ -405,7 +416,8 @@ def main():
+     vision = (VisionThread(vq, enable_sign=not a.no_sign and cloud is None, stats=stats,
+                            camera_index=sign_index, segment_recorder=recorder,
+                            pose_3d=a.pose_3d, segmenter=segmenter, segment_events=commands,
+-                           track_face=not a.fixed_caption and not separate_face)
++                           track_face=not a.fixed_caption and not separate_face,
++                           preview_hands=a.debug)
+               if need_vision else None)
+     if vision:
+         vision.start()
+@@ -442,7 +454,14 @@ def main():
+     if video_enabled:
+         from src.video_overlay import VideoOverlay
+         overlay = VideoOverlay()
++    # SPACE/c need one focused OpenCV window. The caption, HUD or transcript window is
++    # enough; only without them open the debug camera view (one more full-size imshow
++    # per frame, which a slow laptop feels).
++    if keyboard_cloud and not (video_enabled or a.transcript
++                               or getattr(display, "has_window", False)):
++        a.debug = True
+     camera_frame = None
++    black = None
+     camera_frame_at = float("-inf")
+     displayed_caption = None
+     mouse_actions = queue.Queue()
+@@ -512,14 +531,18 @@ def main():
+                     else:
+                         pending_word_t = payload["word_t"]
+                 if a.debug:
+-                    v = payload["frame"].copy()
+-                    if C.MIRROR_PREVIEW:
+-                        v = cv2.flip(v, 1)
++                    v = payload["frame"]
++                    if v.shape[1] > C.DEBUG_PREVIEW_W:     # smaller window, cheaper to draw
++                        scale = C.DEBUG_PREVIEW_W / v.shape[1]
++                        v = cv2.resize(v, (C.DEBUG_PREVIEW_W, int(v.shape[0] * scale)),
++                                       interpolation=cv2.INTER_AREA)
++                    v = cv2.flip(v, 1) if C.MIRROR_PREVIEW else v.copy()
+                     txt = (f"{payload['fps']:.0f}fps  "
+                            f"win {payload['in_fps']:.0f}fps  "
+                            f"vis {payload['ms_vision']:.0f}ms  "
+                            f"inf {payload['ms_infer']:.0f}ms  "
+-                           f"{payload['raw']} {payload['conf']:.2f}")
++                           f"{payload['raw']} {payload['conf']:.2f}  "
++                           f"Hands: {payload['hand_count']}/2")
+                     cv2.putText(v, txt, (16, 36), cv2.FONT_HERSHEY_SIMPLEX,
+                                 0.7, (0, 255, 0), 2)
+                     if not gate.is_open():
+@@ -627,16 +650,24 @@ def main():
+                        else content.frame(face_xy, last_size))
+             with stats.span("display"):
+                 display.show(img)
+-                if overlay is not None and now - last_video_draw >= 1.0 / 30:
++                if overlay is not None and now - last_video_draw >= 1.0 / C.VIDEO_OVERLAY_FPS:
+                     if camera_frame is None:
+                         import numpy as np
+                         camera_frame = np.zeros((C.CAM_H, C.CAM_W, 3), dtype=np.uint8)
+-                    background = (camera_frame if now - camera_frame_at <= 1.0
+-                                  else camera_frame * 0)
+-                    video = overlay.render(background, captions, track, now,
+-                                           mirror=C.MIRROR_PREVIEW and not separate_face,
+-                                           tracks=faces.tracks(now), manual=faces.manual,
+-                                           selected_id=faces.selected_id)
++                    if now - camera_frame_at <= 1.0:
++                        background = camera_frame
++                    else:                    # stale camera: never show an old person
++                        if black is None or black.shape != camera_frame.shape:
++                            import numpy as np
++                            black = np.zeros_like(camera_frame)
++                        background = black
++                    with stats.span("video_overlay"):
++                        video = overlay.render(background, captions, track, now,
++                                               mirror=C.MIRROR_PREVIEW and not separate_face,
++                                               tracks=faces.tracks(now), manual=faces.manual,
++                                               selected_id=faces.selected_id)
++                    if recorder is not None and not a.debug:
++                        draw_segment_overlay(cv2, video, recorder, segmenter)
+                     if not gate.is_open():
+                         cv2.putText(video, "MIC MUTED (TTS)", (16, 80),
+                                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+diff --git a/src/camera.py b/src/camera.py
+index e10b62b..f24c0b1 100644
+--- a/src/camera.py
++++ b/src/camera.py
+@@ -23,6 +23,10 @@ def open_camera(verbose=True, camera_index=None):
+     if not cap.isOpened():
+         return None
+ 
++    # ?뺤텞 ?뺤떇? ?ш린蹂대떎 癒쇱? ?뺥빐??DirectShow 媛 諛쏆븘?ㅼ엯?덈떎. macOS(AVFoundation)??+    # ???ㅼ젙???곗? ?딆뒿?덈떎. 移대찓?쇨? 嫄곗젅?섎㈃ ?쒕씪?대쾭 湲곕낯 ?뺤떇?쇰줈 ?⑥뒿?덈떎.
++    if C.CAM_FOURCC and not C.IS_MAC:
++        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*C.CAM_FOURCC))
+     cap.set(cv2.CAP_PROP_FRAME_WIDTH, C.CAM_W)
+     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, C.CAM_H)
+     cap.set(cv2.CAP_PROP_FPS, C.CAM_FPS)
+@@ -34,10 +38,19 @@ def open_camera(verbose=True, camera_index=None):
+     if verbose:
+         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+-        print(f"[camera {index}] {w}x{h}")
++        print(f"[camera {index}] {w}x{h} {fourcc_name(cap.get(cv2.CAP_PROP_FOURCC))} "
++              f"(?쒕씪?대쾭 蹂닿퀬 {cap.get(cv2.CAP_PROP_FPS):.0f}fps; ?ㅼ젣 珥덈떦 ?μ닔??"
++              f"tools/profile_pipeline.py --camera 濡??뺤씤)")
+     return cap
+ 
+ 
++def fourcc_name(value):
++    """CAP_PROP_FOURCC ?レ옄 -> 'MJPG' 媛숈? ??湲?? ?쎌쓣 ???놁쑝硫?'?'."""
++    code = int(value)
++    text = "".join(chr((code >> 8 * i) & 0xFF) for i in range(4))
++    return text if code and text.isprintable() and text.strip() else "?"
++
++
+ def _apply_manual_exposure(cap, cv2, verbose):
+     """
+     諛깆뿏?쒕쭏??媛?洹쒖빟???ㅻ쫭?덈떎.
+diff --git a/src/collect.py b/src/collect.py
+index 317fadf..04b9192 100644
+--- a/src/collect.py
++++ b/src/collect.py
+@@ -123,7 +123,7 @@ def main():
+         label = C.VOCAB[li]
+         now = clock.now()
+ 
+-        # ---------------- ?곹깭 癒몄떊 ----------------
++        # ?곹깭 癒몄떊
+         if state == "countdown":
+             left = 3.0 - (now - t_state)
+             if left <= 0:
+@@ -156,7 +156,7 @@ def main():
+                       f"?먮낯 {len(buf)}?꾨젅??{elapsed:.2f}珥?({actual_fps:.1f}fps)")
+                 state = "idle"
+ 
+-        # ---------------- HUD ----------------
++        # HUD
+         done = count_of(label)
+         color = (0, 255, 0) if done >= C.SEQ_PER_LABEL else (255, 255, 255)
+         put(view, f"[{li + 1}/{len(C.VOCAB)}]  {label}", (20, 40), color, 0.9, 2)
+diff --git a/src/features_v2.py b/src/features_v2.py
+index 7c58d16..b99e2f0 100644
+--- a/src/features_v2.py
++++ b/src/features_v2.py
+@@ -54,7 +54,7 @@ FEATURE_DIM_V2 = DIM_HAND + DIM_BODY + 3   # 101
+ _EPS = 1e-6
+ 
+ 
+-# ================================================================ ?뺢퇋??+# ?뺢퇋?? def canon_hand(pts):
+     """
+     ??21x2 -> ?먮ぉ ?먯젏 + ?ш린 1 + ?뚯쟾 ?뺣젹.
+@@ -106,7 +106,7 @@ SLICE_HAND = slice(0, DIM_HAND)
+ SLICE_BODY = slice(DIM_HAND, DIM_HAND + DIM_BODY)
+ 
+ 
+-# ================================================ ?낅젰 A: MediaPipe
++# ?낅젰 A: MediaPipe
+ def from_mediapipe(results):
+     """Holistic 寃곌낵 -> 101李⑥썝. 異붾줎 寃쎈줈?먯꽌 ?ъ슜."""
+     def hand(lms):
+@@ -132,7 +132,7 @@ def from_mediapipe(results):
+     return assemble(lh, rh, body, valid)
+ 
+ 
+-# ================================================ ?낅젰 B: AI Hub JSON
++# ?낅젰 B: AI Hub JSON
+ def _triplets(flat):
+     """OpenPose ??[x,y,conf, x,y,conf, ...] -> (N,3)."""
+     if not flat:
+@@ -175,7 +175,7 @@ def from_openpose(person, conf_min=0.2):
+     return assemble(lh, rh, body, valid)
+ 
+ 
+-# ================================================ ?쒗??由ъ깦??+# ?쒗??由ъ깦?? def resample(seq, target_len=30):
+     """
+     媛蹂 湲몄씠 ?쒗??-> 怨좎젙 湲몄씠. ?좏삎 蹂닿컙?쇰줈 洹좊벑 由ъ깦?뚰빀?덈떎.
+diff --git a/src/hud.py b/src/hud.py
+index 81e02d8..ae9fa2c 100644
+--- a/src/hud.py
++++ b/src/hud.py
+@@ -28,7 +28,7 @@ import config as C
+ from src import clock
+ 
+ 
+-# ---------------------------------------------------------------- 罹섎━釉뚮젅?댁뀡
++# 罹섎━釉뚮젅?댁뀡
+ _CALIB = {"offset": list(C.HUD_CALIB_OFFSET), "scale": list(C.HUD_CALIB_SCALE)}
+ 
+ 
+@@ -58,7 +58,7 @@ def save_calib(offset, scale):
+     load_calib()
+ 
+ 
+-# ---------------------------------------------------------------- 醫뚰몴 蹂??+# 醫뚰몴 蹂?? def camera_to_hud(cx, cy, cam_w, cam_h):
+     """
+     移대찓???쎌? -> HUD ?쎌?.
+@@ -79,7 +79,7 @@ def camera_to_hud(cx, cy, cam_w, cam_h):
+     return x, y, inside
+ 
+ 
+-# ---------------------------------------------------------------- ?뚮뜑??+# ?뚮뜑?? class HudRenderer:
+     # 媛숈? 湲쨌媛숈? ?꾩튂硫?留??꾨젅???ㅼ떆 洹몃━吏 ?딆뒿?덈떎. ?붾㈃ ???μ? 1KB ?⑥쭞?낅땲??
+     CACHE_SIZE = 64
+@@ -134,7 +134,6 @@ class HudRenderer:
+               f"      媛덈Т由?Galmuri11.ttf) 瑜?assets/fonts/ ???ｌ쑝?몄슂.")
+         return ImageFont.load_default()
+ 
+-    # ---------------------------------------------------------------
+     def text_w(self, s):
+         """臾몄옄?댁쓽 ?ㅼ젣 ?쎌? ?? ?고듃瑜?紐??쎌뿀?쇰㈃ ??듦컪."""
+         try:
+@@ -313,7 +312,6 @@ class HudRenderer:
+                     outline=1)
+         return img
+ 
+-    # ---------------------------------------------------------------
+     @staticmethod
+     def _tail(d, bx, bw, by, face_left):
+         if face_left:
+@@ -341,7 +339,7 @@ class HudRenderer:
+                        (C.OLED_W // 2 + 5, h - 11)], fill=1)
+ 
+ 
+-# ---------------------------------------------------------------- ?쒖떆 ?댁슜
++# ?쒖떆 ?댁슜
+ class HudContent:
+     """HUD ??臾댁뾿???꾩슱吏 ?뺥빀?덈떎: ?곷???留? ??踰덉뿭 寃곌낵, ?곹깭 ??以?
+ 
+@@ -421,7 +419,7 @@ class HudContent:
+         return img
+ 
+ 
+-# ------------------------------------------------------- SSD1306/1309 ?⑦궧
++# SSD1306/1309 ?⑦궧
+ def pack_ssd1306(img):
+     """
+     PIL 1鍮꾪듃 ?대?吏 -> SSD1306/1309 ?꾨젅?꾨쾭??1024諛붿씠??diff --git a/src/landmarks.py b/src/landmarks.py
+index 0892065..38be46b 100644
+--- a/src/landmarks.py
++++ b/src/landmarks.py
+@@ -241,6 +241,33 @@ def detection_face_center_px(results, w, h):
+             max(0.0, min(y, float(max(h - 1, 0)))))
+ 
+ 
++def make_preview_hands():
++    """Track hands even when the face or upper body is outside the frame."""
++    import mediapipe as mp
++
++    return mp.solutions.hands.Hands(
++        static_image_mode=False,
++        max_num_hands=2,
++        model_complexity=1,
++        min_detection_confidence=0.5,
++        min_tracking_confidence=0.5,
++    )
++
++
++def draw_hand_preview(image, results):
++    """Draw only detected hand joints in the original, unmirrored image space."""
++    import mediapipe as mp
++
++    drawing = mp.solutions.drawing_utils
++    for hand in results.multi_hand_landmarks or []:
++        drawing.draw_landmarks(
++            image, hand, mp.solutions.hands.HAND_CONNECTIONS,
++            drawing.DrawingSpec(color=(0, 255, 255), thickness=2, circle_radius=4),
++            drawing.DrawingSpec(color=(0, 210, 0), thickness=2),
++        )
++    return image
++
++
+ def draw_debug(image, results):
+     """?섏쭛/?붾쾭洹몄슜 ?ㅻ쾭?덉씠."""
+     import mediapipe as mp
+diff --git a/src/latency.py b/src/latency.py
+index e1c7fad..df64745 100644
+--- a/src/latency.py
++++ b/src/latency.py
+@@ -185,7 +185,6 @@ class LatencyTracker:
+         """clock.now() 濡????쒖옉 ?쒓컖 t0 遺?곗쓽 寃쎄낵瑜?湲곕줉 (time.time() 怨??욎? ?딆쓬)."""
+         self.add(name, (clock.now() - t0) * 1000.0)
+ 
+-    # ------------------------------------------------------------------
+     def details(self):
+         """{?대쫫: {count, max, p50, p95, exact, recent_n, recent_p50, recent_p95}}
+ 
+diff --git a/src/oled_bridge.py b/src/oled_bridge.py
+index 8d629b7..17a150f 100644
+--- a/src/oled_bridge.py
++++ b/src/oled_bridge.py
+@@ -1,29 +1,8 @@
+ # -*- coding: utf-8 -*-
+-"""
+-?붿뒪?뚮젅??諛깆뿏??-
+-PC ?먮뒗 I2C/SPI ?ы듃媛 ?놁뒿?덈떎. 紐낆꽭?쒖쓽 "Python?먯꽌 I2C ?쒖뼱 肄붾뱶"??-?쇱쫰踰좊━?뚯씠 湲곗??닿퀬, PC 吏곴껐 援ъ“?먯꽌??諛섎뱶??釉뚮━吏 MCU 媛 ?꾩슂?⑸땲??
+-
+-    PC ??USB(?쒕━???????꾨몢?대끂/Pico ??SPI????SSD1306/1309 OLED
+-
+-I2C 媛 ?꾨땲??SPI 瑜??곕뒗 ?댁쑀: 128x64 ???꾨젅?꾨떦 1KB ?몃뜲
+-I2C 400kHz 濡쒕뒗 ?뚯씠???ㅻ쾭?ㅻ뱶源뚯? ?⑹퀜 15~25fps 媛 ?쒓퀎?낅땲??
+-SPI 8MHz 硫??ъ쑀濡?뒿?덈떎.
+-
+-諛깆뿏??4醫?(config.DISPLAY_BACKEND 濡??좏깮)
+-    preview : PC 李쎌뿉 6諛??뺣?   -> ?섎뱶?⑥뼱 0?? Step 1~2 ?꾩껜瑜??ш린??寃利?-    serial  : PC + 釉뚮━吏 MCU 寃쎌쑀 ?ㅼ젣 OLED
+-    pi      : ?쇱쫰踰좊━?뚯씠 GPIO 吏곴껐 (釉뚮━吏 MCU 遺덊븘??
+-    null    : 異쒕젰 ?놁쓬
++"""OLED 誘몃━蹂닿린? ?댁쟾 臾쇰━ ?붿뒪?뚮젅??異쒕젰 寃쎈줈.
+ 
+-???쇱쫰踰좊━?뚯씠瑜??곕㈃ 釉뚮━吏媛 ?щ씪吏묐땲??-    ??援ъ“媛 ?꾩슂???댁쑀??"PC ??SPI ?ы듃媛 ?놁뼱?? ?섎굹肉먯엯?덈떎.
+-    ?쇱쫰踰좊━?뚯씠??GPIO ??SPI/I2C 媛 ?덉쑝誘濡?OLED 瑜?吏곸젒 臾쇰━硫??⑸땲??
+-
+-        Pi ??SPI(GPIO)????SSD1306/1309 OLED
+-
+-    ?꾨몢?대끂?? ?쒕━???꾨줈?좎퐳?? ?뚯썾?대룄 ?꾩슂 ?놁뼱吏묐땲??
++?꾩옱 湲곕낯 異쒕젰? ?명듃遺곸쓽 誘몃━蹂닿린 李쎌엯?덈떎. serial/pi 諛깆뿏?쒕뒗 ?덉쟾
++?섎뱶?⑥뼱 ?ㅽ뿕???꾪빐 ?④꺼 ?먯뿀?듬땲??
+ """
+ import sys
+ import queue
+@@ -154,27 +133,9 @@ class SerialDisplay:
+ 
+ 
+ class PiDisplay:
+-    """
++    """?댁쟾 Raspberry Pi GPIO 異쒕젰 寃쎈줈."""
+ 
+     has_window = False
+-    ?쇱쫰踰좊━?뚯씠 GPIO 吏곴껐 (luma.oled).
+-
+-        pip install luma.oled
+-        sudo raspi-config  ->  Interface Options  ->  SPI ?쒖꽦??-
+-    諛곗꽑 (SPI)
+-        OLED          Pi 40?
+-        GND           GND      (6踰?
+-        VCC           3V3      (1踰?
+-        SCL/D0(CLK)   GPIO11 SCLK (23踰?
+-        SDA/D1(MOSI)  GPIO10 MOSI (19踰?
+-        RES           GPIO25      (22踰?
+-        DC            GPIO24      (18踰?
+-        CS            GPIO8  CE0  (24踰?
+-
+-    ??I2C 紐⑤뱢????嫄곕㈃ i2c=True 濡? ?ㅻ쭔 128x64 ???꾨젅?꾨떦 1KB ??-      I2C 400kHz 濡쒕뒗 15~25fps 媛 ?쒓퀎?낅땲?? SPI 瑜?沅뚰빀?덈떎.
+-    """
+ 
+     def __init__(self, i2c=False, rotate=0):
+         from luma.oled.device import ssd1306
+diff --git a/src/predictor.py b/src/predictor.py
+index fce248f..15e29dd 100644
+--- a/src/predictor.py
++++ b/src/predictor.py
+@@ -13,8 +13,8 @@
+ 
+ ?꾨젅?꾨젅?댄듃媛 ?щ씪?몃룄 寃щ뵒??踰?(config.ADAPTIVE_WINDOW):
+     '理쒓렐 30?꾨젅?????꾨땲??'理쒓렐 1.0珥?瑜?紐⑥븘 30媛쒕줈 由ъ깦?뚰빐???ｌ뒿?덈떎.
+-    ?명듃遺?30fps)?먯꽌 ?숈뒿??紐⑤뜽???쇱쫰踰좊━?뚯씠(10fps)???щ━硫? 30?꾨젅?꾩씠
+-    1珥덇? ?꾨땲??3珥덇? ?⑸땲?? 媛숈? ?섏뼱?몃뜲 紐⑤뜽??蹂대뒗 ?쒓컙 異뺤씠 3諛곕줈
++    ?명듃遺?30fps)?먯꽌 ?숈뒿??紐⑤뜽????꾨젅??湲곌린(10fps)?먯꽌 ?ㅽ뻾?섎㈃,
++    30?꾨젅?꾩씠 1珥덇? ?꾨땲??3珥덇? ?⑸땲?? 媛숈? ?섏뼱?몃뜲 紐⑤뜽??蹂대뒗 ?쒓컙 異뺤씠 3諛곕줈
+     ?섏뼱???뺥솗?꾧? 臾대꼫吏?붾뜲 ?먮윭???섎굹?????⑸땲?? 李얘린 ?쒖씪 ?대젮??     醫낅쪟???꾩삁 ?쒓컙 湲곗??쇰줈 李쎌쓣 ?≪뒿?덈떎.
+ """
+@@ -144,7 +144,6 @@ class SignPredictor:
+         self.votes.append(word if conf >= C.CONF_THRESHOLD else None)
+         return self._confirm(word, conf)
+ 
+-    # ------------------------------------------------------------------
+     def _window(self, now):
+         """
+         異붾줎???ｌ쓣 (SEQ_LEN, D) ?쒗?? ?꾩쭅 ?뚭? ?꾨땲硫?None.
+diff --git a/src/runtime.py b/src/runtime.py
+index 399bc79..9195e55 100644
+--- a/src/runtime.py
++++ b/src/runtime.py
+@@ -63,7 +63,6 @@ class SignRuntime:
+         if warmup:
+             self._warmup()
+ 
+-    # ------------------------------------------------------------------
+     def _load_spec(self):
+         """紐⑤뜽 ?놁쓽 *_preproc.json ???쎌뒿?덈떎. ?꾩쿂由??ъ뼇???⑥씪 異쒖쿂."""
+         for cand in (self.path.with_name(self.path.stem + "_preproc.json"),
+@@ -148,7 +147,6 @@ class SignRuntime:
+         except Exception as e:
+             print(f"[runtime] ?뚮컢???ㅽ뙣: {e}")
+ 
+-    # ------------------------------------------------------------------
+     def predict(self, x):
+         """x: (1, seq, dim) float32 -> (classes,) ?뺣쪧."""
+         x = np.asarray(x, np.float32)
+diff --git a/src/stt_worker.py b/src/stt_worker.py
+index 8893372..bb0d36f 100644
+--- a/src/stt_worker.py
++++ b/src/stt_worker.py
+@@ -122,13 +122,13 @@ class SherpaDecoder:
+ 
+     name = "sherpa"
+ 
+-    def __init__(self, model_dir=None, rate=None, threads=2):
++    def __init__(self, model_dir=None, rate=None, threads=None):
+         import sherpa_onnx
+         f = transducer_files(model_dir or C.SHERPA_MODEL)
+         self.rate = rate or C.AUDIO_RATE
+         self.rec = sherpa_onnx.OnlineRecognizer.from_transducer(
+             tokens=str(f["tokens"]), encoder=str(f["encoder"]), decoder=str(f["decoder"]),
+-            joiner=str(f["joiner"]), num_threads=threads, sample_rate=self.rate,
++            joiner=str(f["joiner"]), num_threads=threads or C.STT_THREADS, sample_rate=self.rate,
+             feature_dim=80, decoding_method="greedy_search", enable_endpoint_detection=True,
+             # rule1: ?꾨Т 留??놁씠 2.4珥? rule2: 留먰븳 ??臾댁쓬??STT_ENDPOINT_MS, rule3: 20珥?             rule1_min_trailing_silence=2.4,
+@@ -232,7 +232,6 @@ class SttWorker(threading.Thread):
+         if kind in ("final", "cancel"):
+             self._utterance_open = False
+ 
+-    # ------------------------------------------------------------------
+     def run(self):
+         try:
+             import sounddevice as sd
+diff --git a/src/train.py b/src/train.py
+index 15d8a54..2f31af3 100644
+--- a/src/train.py
++++ b/src/train.py
+@@ -30,7 +30,7 @@ import config as C
+ from src.landmarks import FEATURE_DIM, FEATURE_VERSION, N_FLAGS
+ 
+ 
+-# ------------------------------------------------------------------ ?곗씠??+# ?곗씠?? def load_dataset():
+     """?뚯씪紐?{珥ъ쁺??__{?몄뀡}_{踰덊샇}.npy ?먯꽌 珥ъ쁺??ID???쎌뒿?덈떎."""
+     from src.dataset_contract import ensure_dataset_contract, signer_from_stem
+@@ -68,7 +68,7 @@ def load_dataset():
+             np.array(groups), labels)
+ 
+ 
+-# ------------------------------------------------------------------ 利앷컯
++# 利앷컯
+ def augment(X, y, times, rng):
+     """
+     ?묒? ?곗씠?곗뀑?먯꽌 ?쇰컲?붾? ?대━??3媛吏.
+@@ -107,7 +107,7 @@ def augment(X, y, times, rng):
+     return np.concatenate(Xs), np.concatenate(ys)
+ 
+ 
+-# ------------------------------------------------------------------ 紐⑤뜽
++# 紐⑤뜽
+ def build_model(n_classes):
+     """TensorFlow/tf2onnx??protobuf 異⑸룎???쇳븯??PyTorch LSTM."""
+     import torch.nn as nn
+@@ -243,7 +243,7 @@ def export_models(model, pt_path, onnx_path):
+     return max_err
+ 
+ 
+-# ------------------------------------------------------------------ main
++# main
+ def main():
+     ap = argparse.ArgumentParser()
+     ap.add_argument("--epochs", type=int, default=200)
+diff --git a/src/tts_player.py b/src/tts_player.py
+index 68f54dc..5f67460 100644
+--- a/src/tts_player.py
++++ b/src/tts_player.py
+@@ -43,7 +43,6 @@ class TtsPlayer(threading.Thread):
+         if preload:
+             self._preload()
+ 
+-    # ------------------------------------------------------------------
+     def _preload(self):
+         """?쒖옉 ???꾨? 硫붾え由ъ뿉 ?щ젮 ?붿뒪??I/O 吏?곕룄 ?쒓굅?⑸땲??"""
+         try:
+@@ -90,7 +89,6 @@ class TtsPlayer(threading.Thread):
+             return item
+         return item, 0.0, 0.0
+ 
+-    # ------------------------------------------------------------------
+     def run(self):
+         while not self._quit.is_set():
+             item = self.q.get()
+diff --git a/src/video_overlay.py b/src/video_overlay.py
+index c9d136f..4b0a11a 100644
+--- a/src/video_overlay.py
++++ b/src/video_overlay.py
+@@ -1,21 +1,55 @@
+-"""Korean captions drawn onto the video, independently of OLED coordinates."""
++"""Korean captions drawn onto the video, independently of OLED coordinates.
++
++Only the small pieces are drawn with PIL (header bar, track labels, the caption
++bubble) and cached; the camera frame itself stays a numpy array. Converting a
++1280x720 frame to PIL and back on every redraw cost about 13 ms per frame.
++"""
+ from collections import OrderedDict
++import math
+ 
++import cv2
+ import numpy as np
+ from PIL import Image, ImageDraw
+ 
+ from src.text_layout import korean_font, wrap_text
+ 
++HEADER_BG = (20, 26, 36)          # RGB, as PIL draws it
++SELECTED = (106, 206, 255)
++CANDIDATE = (155, 165, 180)
++CACHE_SIZE = 64
++
++
++def _bgr(rgb):
++    return rgb[2], rgb[1], rgb[0]
++
++
++def _blend(region, rgb, alpha):
++    """region (h, w, 3) BGR uint8 in place: colour or sprite blended by alpha (h, w) 0..255."""
++    if alpha.max() == 0:
++        return
++    a = alpha.astype(np.float32)[..., None] / 255.0
++    region[:] = np.rint(region * (1.0 - a) + rgb * a).astype(np.uint8)
++
+ 
+ class VideoOverlay:
+     def __init__(self):
+         self.layouts = OrderedDict()
++        self.sprites = OrderedDict()
+         self.side = "right"
+         self.track_id = None
+ 
+     def _font(self, size):
+         return korean_font(size)
+ 
++    def _cached(self, key, build):
++        if key in self.sprites:
++            self.sprites.move_to_end(key)
++        else:
++            self.sprites[key] = build()
++            if len(self.sprites) > CACHE_SIZE:
++                self.sprites.popitem(last=False)
++        return self.sprites[key]
++
+     def _lines(self, text, font, width, size, max_lines):
+         key = (text, width, size, max_lines)
+         if key not in self.layouts:
+@@ -26,37 +60,101 @@ class VideoOverlay:
+                 while font.getlength(lines[0]) > width and len(lines[0]) > 1:
+                     lines[0] = "?? + lines[0][2:]
+             self.layouts[key] = lines
+-            if len(self.layouts) > 64:
++            if len(self.layouts) > CACHE_SIZE:
+                 self.layouts.popitem(last=False)
+         self.layouts.move_to_end(key)
+         return self.layouts[key]
+ 
++    # ---------------------------------------------------------- small pieces
++    def _text_mask(self, text, size):
++        """Glyph coverage of text drawn at the origin, and its offset (PIL 'la' anchor)."""
++        def build():
++            font = korean_font(size)
++            left, top, right, bottom = font.getbbox(text)
++            mask = Image.new("L", (max(1, right - left), max(1, bottom - top)), 0)
++            ImageDraw.Draw(mask).text((-left, -top), text, font=font, fill=255)
++            return np.asarray(mask), left, top
++        return self._cached(("text", text, size), build)
++
++    def _put_text(self, output, xy, text, size, rgb):
++        mask, left, top = self._text_mask(text, size)
++        x, y = int(math.floor(xy[0])) + left, int(math.floor(xy[1])) + top
++        h, w = output.shape[:2]
++        x0, y0, x1, y1 = max(0, x), max(0, y), min(w, x + mask.shape[1]), min(h, y + mask.shape[0])
++        if x0 < x1 and y0 < y1:
++            _blend(output[y0:y1, x0:x1], np.array(_bgr(rgb), np.float32),
++                   mask[y0 - y:y1 - y, x0 - x:x1 - x])
++
++    def _header(self, w, size, target, mode):
++        def build():
++            height = size * 2 + 19          # PIL's rectangle (0, 0, w, size*2+18) is inclusive
++            image = Image.new("RGB", (w, height), HEADER_BG)
++            draw = ImageDraw.Draw(image)
++            font = korean_font(size)
++            draw.text((10, 5), f"????곷?: {target} 쨌 {mode}", font=font, fill=(230, 238, 245))
++            draw.text((10, size + 10), "?대┃: ?좏깮 쨌 ?고겢由? ?먮룞 쨌 H: 湲곕줉", font=font,
++                      fill=(160, 175, 190))
++            return np.asarray(image)[:, :, ::-1].copy()
++        return self._cached(("header", w, size, target, mode), build)
++
++    def _bubble(self, lines, size, partial, bx, by, bw, bh, tail):
++        """RGBA sprite of the bubble (tail, box, status and lines) and its integer origin."""
++        xs = [bx, bx + bw] + ([p[0] for p in tail] if tail else [])
++        ox, oy = int(math.floor(min(xs))), int(math.floor(by))
++        # Same fractional offsets rasterize the same way, so the sprite can be reused
++        # while the face (and so the bubble) moves by whole pixels.
++        rel_tail = tuple((px - ox, py - oy) for px, py in tail) if tail else None
++        key = ("bubble", tuple(lines), size, partial, bx - ox, by - oy, bw, bh, rel_tail)
++
++        def build():
++            width = int(math.ceil(max(xs) - ox)) + 2
++            image = Image.new("RGBA", (width, int(math.ceil(bh)) + 2), (0, 0, 0, 0))
++            draw = ImageDraw.Draw(image)
++            font = korean_font(size)
++            line_h = size + 8
++            color = SELECTED if partial else (230, 238, 245)
++            x, y = bx - ox, by - oy
++            if rel_tail:
++                draw.polygon(list(rel_tail), fill=color)
++            draw.rounded_rectangle((x, y, x + bw, y + bh), radius=12, fill=HEADER_BG,
++                                   outline=color, width=2)
++            draw.text((x + 12, y + 8), "?몄떇 以?쨌쨌쨌" if partial else "?몄떇 ?꾨즺", font=font,
++                      fill=color)
++            for index, line in enumerate(lines):
++                draw.text((x + 12, y + 8 + line_h * (index + 1)), line, font=font,
++                          fill=(255, 255, 255))
++            rgba = np.asarray(image)
++            return rgba[:, :, 2::-1].astype(np.float32), rgba[:, :, 3].copy()
++        bgr, alpha = self._cached(key, build)
++        return bgr, alpha, ox, oy
++
++    # ---------------------------------------------------------------- render
+     def render(self, frame, caption, track, now, mirror=False, tracks=(), manual=False,
+                selected_id=None):
+-        # Always copy: debug drawing must not modify the capture worker's frame.
+-        output = frame[:, ::-1].copy() if mirror else frame.copy()
++        # Always a new array: debug drawing must not modify the capture worker's frame.
++        output = cv2.flip(frame, 1) if mirror else frame.copy()
+         h, w = output.shape[:2]
+-        image = Image.fromarray(output[:, :, ::-1])
+-        draw = ImageDraw.Draw(image)
++        ui_size = max(12, min(18, w // 32))
+         for candidate in tracks:
+             x1, y1, x2, y2 = candidate.box
+             if mirror:
+                 x1, x2 = w - x2, w - x1
+             selected = candidate.track_id == selected_id
+-            color = (106, 206, 255) if selected else (155, 165, 180)
+-            draw.rectangle((x1, y1, x2, y2), outline=color, width=2 if selected else 1)
+-            draw.text((x1 + 4, max(62, y1 - 24)), f"???{candidate.track_id}",
+-                      font=korean_font(max(12, min(18, w // 32))), fill=color)
+-        ui_size = max(12, min(18, w // 32))
+-        draw.rectangle((0, 0, w, ui_size * 2 + 18), fill=(20, 26, 36))
++            color = SELECTED if selected else CANDIDATE
++            corners = [(int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2)))]
++            if selected:            # PIL width=2 draws the second line inside the first
++                a, b, c, d = corners[0]
++                corners.append((a + 1, b + 1, c - 1, d - 1))
++            for a, b, c, d in corners:
++                cv2.rectangle(output, (a, b), (c, d), _bgr(color), 1)
++            self._put_text(output, (x1 + 4, max(62, y1 - 24)), f"???{candidate.track_id}",
++                           ui_size, color)
+         target = f"???{track.track_id}" if track else "誘몄???
+-        mode = "?섎룞" if manual else "?먮룞"
+-        draw.text((10, 5), f"????곷?: {target} 쨌 {mode}", font=korean_font(ui_size),
+-                  fill=(230, 238, 245))
+-        draw.text((10, ui_size + 10), "?대┃: ?좏깮 쨌 ?고겢由? ?먮룞 쨌 H: 湲곕줉",
+-                  font=korean_font(ui_size), fill=(160, 175, 190))
++        header = self._header(w, ui_size, target, "?섎룞" if manual else "?먮룞")
++        rows = min(h, header.shape[0])
++        output[:rows] = header[:rows]
+         if not caption.visible(now):
+-            return np.asarray(image)[:, :, ::-1].copy()
++            return output
+         size = max(12, min(28, w // 32, h // 12))
+         font = self._font(size)
+         anchor = caption.anchor(track, now)
+@@ -69,7 +167,7 @@ class VideoOverlay:
+             if space >= max(120, size * 6 + 24):
+                 width = min(width, space)
+         if width < 24 or h < 160:
+-            return np.asarray(image)[:, :, ::-1].copy()
++            return output
+         line_h = size + 8
+         max_lines = max(1, min(3, (h - 90) // line_h - 1))
+         lines = self._lines(caption.text, font, width - 24, size, max_lines)
+@@ -96,14 +194,10 @@ class VideoOverlay:
+                 box = None  # too little room: readable fixed caption
+         if not box:
+             bx, by = (w - bw) / 2, max(4, h - bh - 16)
+-        color = (106, 206, 255) if caption.partial else (230, 238, 245)
+-        if tail:
+-            draw.polygon(tail, fill=color)
+-        draw.rounded_rectangle((bx, by, bx + bw, by + bh), radius=12,
+-                               fill=(20, 26, 36), outline=color, width=2)
+-        status = "?몄떇 以?쨌쨌쨌" if caption.partial else "?몄떇 ?꾨즺"
+-        draw.text((bx + 12, by + 8), status, font=font, fill=color)
+-        for index, line in enumerate(lines):
+-            draw.text((bx + 12, by + 8 + line_h * (index + 1)), line,
+-                      font=font, fill=(255, 255, 255))
+-        return np.asarray(image)[:, :, ::-1].copy()
++        bgr, alpha, ox, oy = self._bubble(lines, size, caption.partial, bx, by, bw, bh, tail)
++        x0, y0 = max(0, ox), max(0, oy)
++        x1, y1 = min(w, ox + alpha.shape[1]), min(h, oy + alpha.shape[0])
++        if x0 < x1 and y0 < y1:
++            _blend(output[y0:y1, x0:x1], bgr[y0 - oy:y1 - oy, x0 - ox:x1 - ox],
++                   alpha[y0 - oy:y1 - oy, x0 - ox:x1 - ox])
++        return output
+diff --git a/test.mp3 b/test.mp3
+new file mode 100644
+index 0000000..e11cdff
+Binary files /dev/null and b/test.mp3 differ
+diff --git a/tests/run_all.py b/tests/run_all.py
+index 867a3d6..deb32de 100644
+--- a/tests/run_all.py
++++ b/tests/run_all.py
+@@ -6,8 +6,8 @@
+     python tests/run_all.py -v          # 媛??뚯뒪?몄쓽 異쒕젰源뚯? 蹂닿린
+     python tests/run_all.py adaptive    # ?대쫫??'adaptive' 媛 ?ㅼ뼱媛?寃껊쭔
+ 
+-pytest 瑜??곗? ?딆뒿?덈떎. requirements.txt 留?源붾┛ ?섍꼍(= ?덇꼍???щ씪媛??洹?-?섍꼍)?먯꽌 洹몃?濡??뚯븘媛???섍린 ?뚮Ц?낅땲?? ?쇱쫰踰좊━?뚯씠?먯꽌??諛붾줈 ?⑸땲??
++pytest 瑜??곗? ?딆뒿?덈떎. requirements.txt 留??ㅼ튂???ㅽ뻾 ?섍꼍?먯꽌??+洹몃?濡??뚯븘媛???섍린 ?뚮Ц?낅땲??
+ 
+ 媛??뚯뒪?몃뒗 ?낅┰ ?꾨줈?몄뒪濡??뚮┰?덈떎. ?щ윭 ?뚯뒪?멸? config 瑜??꾩떆濡? 媛덉븘?쇱슦湲??뚮Ц??DATA_DIR, ADAPTIVE_WINDOW ?? ???꾨줈?몄뒪?먯꽌 紐곗븘 ?뚮━硫?diff --git a/tests/test_hand_preview.py b/tests/test_hand_preview.py
+new file mode 100644
+index 0000000..be60ce5
+--- /dev/null
++++ b/tests/test_hand_preview.py
+@@ -0,0 +1,68 @@
++"""Hand-only preview coordinates and independent detector integration."""
++import _path  # noqa: F401
++import queue
++from types import SimpleNamespace as NS
++from unittest.mock import patch
++
++import cv2
++import numpy as np
++from mediapipe.framework.formats import landmark_pb2
++
++import main
++from src import landmarks as L
++
++
++hand = landmark_pb2.NormalizedLandmarkList()
++for i in range(21):
++    hand.landmark.add(x=0.2 + (i % 5) * 0.02, y=0.4 + (i // 5) * 0.03, z=0)
++hands = NS(multi_hand_landmarks=[hand])
++frame = np.zeros((240, 320, 3), np.uint8)
++L.draw_hand_preview(frame, NS(multi_hand_landmarks=None))
++assert not frame.any(), "No detections must not leave stale joints"
++L.draw_hand_preview(frame, hands)
++assert frame[96, 64].any(), "Wrist must match the original image coordinates"
++assert not frame[:70].any(), "Hand preview must not draw face or body landmarks"
++assert cv2.flip(frame, 1)[96, 255].any(), "Image and joints must mirror together"
++
++out = queue.Queue()
++worker = main.VisionThread(out, enable_sign=False, track_face=False, preview_hands=True)
++empty = NS(pose_landmarks=None, face_landmarks=None,
++           left_hand_landmarks=None, right_hand_landmarks=None)
++
++
++class Camera:
++    def ok(self):
++        return True
++
++    def read(self):
++        worker.stop()
++        return True, np.zeros((240, 320, 3), np.uint8)
++
++    def release(self):
++        self.closed = True
++
++
++class Detector:
++    def __init__(self, result):
++        self.result = result
++        self.closed = False
++
++    def process(self, rgb):
++        assert not rgb.any(), "Detection must use the image before overlays"
++        return self.result
++
++    def close(self):
++        self.closed = True
++
++
++camera = Camera()
++holistic, detector = Detector(empty), Detector(hands)
++with patch("src.camera.CameraReader", return_value=camera), \
++        patch.object(L, "make_holistic", return_value=holistic), \
++        patch.object(L, "make_preview_hands", return_value=detector):
++    worker.run()
++kind, payload = out.get_nowait()
++assert kind == "frame" and payload["hand_count"] == 1
++assert payload["frame"][96, 64].any(), "Hands must display even when Holistic finds none"
++assert camera.closed and holistic.closed and detector.closed
++print("[OK] hand-only preview, coordinates, mirroring, independent detection and cleanup")
+diff --git a/tests/test_profile_pipeline.py b/tests/test_profile_pipeline.py
+new file mode 100644
+index 0000000..f42587e
+--- /dev/null
++++ b/tests/test_profile_pipeline.py
+@@ -0,0 +1,80 @@
++"""Laptop profiler: camera format request order, delivered fps, stage timings and advice."""
++import _path  # noqa: F401
++import sys
++import tempfile
++from pathlib import Path
++from unittest import mock
++
++import cv2
++import numpy as np
++
++import config as C
++from src.camera import fourcc_name
++from tools.profile_pipeline import advice, grab_camera, measure, read_video
++
++assert fourcc_name(cv2.VideoWriter_fourcc(*"MJPG")) == "MJPG" and fourcc_name(0) == "?"
++
++calls = []
++
++
++class FakeCapture:
++    """Records property order; delivers frames at about 50 per second."""
++
++    def __init__(self, index, backend=None):
++        self.props = {}
++
++    def isOpened(self):
++        return True
++
++    def set(self, prop, value):
++        calls.append(prop)
++        self.props[prop] = value
++        return True
++
++    def get(self, prop):
++        return self.props.get(prop, 0)
++
++    def read(self):
++        import time
++        time.sleep(0.02)
++        return True, np.zeros((72, 128, 3), np.uint8)
++
++    def release(self):
++        pass
++
++
++saved_mac, C.IS_MAC = C.IS_MAC, False            # the FOURCC request is skipped on macOS
++try:
++    with mock.patch("cv2.VideoCapture", FakeCapture):
++        frames, fps, name = grab_camera(0, 0.3, "MJPG")
++        assert name == "MJPG" and 30 < fps < 60 and frames[0].shape == (72, 128, 3), (name, fps)
++        assert calls.index(cv2.CAP_PROP_FOURCC) < calls.index(cv2.CAP_PROP_FRAME_WIDTH), \
++            "DirectShow only accepts the format before the size"
++        calls.clear()
++        _, _, name = grab_camera(0, 0.1, None)
++        assert cv2.CAP_PROP_FOURCC not in calls and name == "?"
++    assert C.CAM_FOURCC == "MJPG", "the comparison run restores the configured format"
++finally:
++    C.IS_MAC = saved_mac
++
++with tempfile.TemporaryDirectory() as td:
++    path = Path(td) / "clip.mp4"
++    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 30, (320, 180))
++    for i in range(12):
++        image = np.full((180, 320, 3), 30 + i * 5, np.uint8)
++        cv2.circle(image, (160, 90), 30, (200, 180, 160), -1)
++        writer.write(image)
++    writer.release()
++    clip = read_video(path, 10)
++    assert len(clip) == 10 and clip[0].shape == (C.CAM_H, C.CAM_W, 3), "resized to camera size"
++    stages = measure(clip, warmup=2)
++assert set(stages) == {"convert", "holistic", "face_detection", "video_overlay", "hud"}
++assert all(0 <= v["p50"] <= v["p95"] for v in stages.values())
++
++fps, tips = advice({"stages": stages, "camera_fps": 9.5})
++assert fps > 0 and any("移대찓?쇨? 珥덈떦 10?? in t for t in tips), tips
++slow = {k: {"p50": 100.0, "p95": 100.0} for k in stages}
++fps, tips = advice({"stages": slow})
++assert fps < 15 and any("CPU" in t for t in tips) and any("VIDEO_OVERLAY_FPS" in t for t in tips)
++print("[OK] profiler: MJPG requested before size, delivered fps, stage timings, advice")
++sys.exit(0)
+diff --git a/tests/test_video_overlay_fast.py b/tests/test_video_overlay_fast.py
+new file mode 100644
+index 0000000..9470af9
+--- /dev/null
++++ b/tests/test_video_overlay_fast.py
+@@ -0,0 +1,60 @@
++"""Cached caption drawing: same pixels as a fresh draw, moves with the face, never mutates frames."""
++import _path  # noqa: F401
++import numpy as np
++
++from src.caption_state import CaptionEvent, CaptionState
++from src.face_tracker import FaceTrack
++from src.video_overlay import CACHE_SIZE, VideoOverlay
++
++rng = np.random.default_rng(3)
++frame = rng.integers(0, 255, (720, 1280, 3), dtype=np.uint8)
++untouched = frame.copy()
++text = "?댁씪 ?ㅽ썑 ???쒖뿉 蹂묒썝?먯꽌 留뚮굹?? ?묒닔鍮꾨뒗 12,500?먯엯?덈떎."
++
++
++def caption_for(face, partial=False):
++    state = CaptionState()
++    state.update(CaptionEvent("partial" if partial else "final", text, 1, 100), face)
++    return state
++
++
++face = FaceTrack(1, (280, 250, 520, 540), 100)
++other = FaceTrack(2, (800, 220, 980, 500), 100)
++shared = VideoOverlay()
++for mirror in (False, True):
++    for partial in (False, True):
++        caption = caption_for(face, partial)
++        first = shared.render(frame, caption, face, 100, mirror=mirror, tracks=[face, other],
++                              selected_id=1)
++        cached = shared.render(frame, caption, face, 100, mirror=mirror, tracks=[face, other],
++                               selected_id=1)
++        fresh = VideoOverlay().render(frame, caption, face, 100, mirror=mirror,
++                                      tracks=[face, other], selected_id=1)
++        assert np.array_equal(first, cached) and np.array_equal(first, fresh), (mirror, partial)
++        assert first.shape == frame.shape and first.dtype == np.uint8
++assert np.array_equal(frame, untouched), "the capture frame is never drawn on"
++
++# A face moving by whole pixels moves the cached bubble with it, pixel for pixel.
++flat = np.full((720, 1280, 3), 40, np.uint8)
++caption = caption_for(face)
++base = VideoOverlay().render(flat, caption, face, 100, tracks=[], selected_id=None)
++moved_face = FaceTrack(1, (280 + 30, 250 + 20, 520 + 30, 540 + 20), 100)
++moved = shared.render(flat, caption_for(moved_face), moved_face, 100, tracks=[], selected_id=None)
++changed = np.argwhere((base != 40).any(axis=2) & (np.arange(720)[:, None] > 60))
++(y0, x0), (y1, x1) = changed.min(axis=0), changed.max(axis=0)
++assert np.array_equal(base[y0:y1 + 1, x0:x1 + 1], moved[y0 + 20:y1 + 21, x0 + 30:x1 + 31])
++
++# No face: the readable fixed caption at the bottom; tiny frames still return their own size.
++fixed = VideoOverlay().render(flat, caption_for(None), None, 100)
++assert (fixed[-120:] != 40).any() and not (fixed[200:400, 300:900] != 40).any()
++for w, h in ((160, 120), (320, 240), (640, 480)):
++    assert VideoOverlay().render(np.zeros((h, w, 3), np.uint8), caption, None, 100).shape == (h, w, 3)
++
++# The sprite cache stays bounded however many different sentences pass through.
++bounded = VideoOverlay()
++for i in range(CACHE_SIZE * 3):
++    bounded.render(flat, caption_for(face) if i % 2 else CaptionState(), face, 100,
++                   tracks=[FaceTrack(i, (100 + i, 300, 300 + i, 500), 100)], selected_id=i)
++assert len(bounded.sprites) <= CACHE_SIZE and len(bounded.layouts) <= CACHE_SIZE
++print("[OK] video overlay: cached sprites equal fresh drawing, follow the face, bounded, "
++      "capture frames untouched")
+diff --git a/tools/demo.py b/tools/demo.py
+index 2ea7b57..b7adffc 100644
+--- a/tools/demo.py
++++ b/tools/demo.py
+@@ -6,7 +6,6 @@
+     python tools/demo.py --record demo.mp4      # 諛쒗몴???곸긽?쇰줈 ???     python tools/demo.py --scenario my.json
+     python tools/demo.py --no-audio             # ?뚮━ ?놁씠 ?붾㈃留?-    python tools/demo.py --display pi           # ?ㅻЪ OLED 濡? 
+ ?????꾩슂?쒓?
+     ?쇱씠釉??곕え???곗쭛?덈떎. 議곕챸???ㅻⅤ怨? 移대찓?쇨? ???≫엳怨? 湲댁옣?댁꽌
+diff --git a/tools/evaluate.py b/tools/evaluate.py
+index bf365fc..8240c0f 100644
+--- a/tools/evaluate.py
++++ b/tools/evaluate.py
+@@ -18,9 +18,8 @@
+     ?댁긽?댁쭛?덈떎. **諛고룷?섎뒗 諛붾줈 洹??뚯씪???щ뒗 寃?*?????ㅽ겕由쏀듃??紐⑹쟻?낅땲??
+ 
+ ??sklearn ?????곷땲??-    吏?쒕? ?꾨? numpy 濡?怨꾩궛?⑸땲?? requirements.txt 留?源붾┛ ?섍꼍
+-    (= ?덇꼍???щ씪媛??洹??섍꼍) ?먯꽌 洹몃?濡??뚯븘媛???섍린 ?뚮Ц?낅땲??
+-    ?쇱쫰踰좊━?뚯씠?먯꽌??諛붾줈 ?ㅽ뻾?⑸땲??
++    吏?쒕? ?꾨? numpy 濡?怨꾩궛?⑸땲?? requirements.txt 留??ㅼ튂???ㅽ뻾 ?섍꼍?먯꽌
++    洹몃?濡??뚯븘媛?꾨줉 異붽? 遺꾩꽍 ?⑦궎吏???섏〈?섏? ?딆뒿?덈떎.
+ """
+ import sys
+ import json
+@@ -35,7 +34,7 @@ import config as C
+ from src.landmarks import FEATURE_DIM
+ 
+ 
+-# ------------------------------------------------------------------ ?곗씠??+# ?곗씠?? def load_dataset(seq_len, feat_dim):
+     """data/raw/{?쇰꺼}/{珥ъ쁺??__{?몄뀡}_{踰덊샇}.npy 瑜??꾨? ?쎌뒿?덈떎."""
+     from src.dataset_contract import ensure_dataset_contract, signer_from_stem
+@@ -117,7 +116,7 @@ def split(X, y, groups, mode, holdout, seed, test_size=0.25):
+     return te, "?쒗???⑥쐞 ??怨쇰??됯????レ옄?낅땲??, warn
+ 
+ 
+-# ------------------------------------------------------------------ 吏??+# 吏?? def confusion(y_true, y_pred, k):
+     cm = np.zeros((k, k), np.int64)
+     np.add.at(cm, (y_true, y_pred), 1)
+@@ -221,7 +220,7 @@ def report(y_true, y_pred, conf, labels):
+     return acc, cm
+ 
+ 
+-# ------------------------------------------------------------------ main
++# main
+ def main():
+     ap = argparse.ArgumentParser()
+     ap.add_argument("model", nargs="?", default=None,
+diff --git a/tools/inspect_aihub.py b/tools/inspect_aihub.py
+index f264882..9f84afc 100644
+--- a/tools/inspect_aihub.py
++++ b/tools/inspect_aihub.py
+@@ -29,7 +29,7 @@ KEYPOINT_HINT = ("hand_left_keypoints", "hand_right_keypoints",
+ MORPH_HINT = ("metaData", "attributes", "sign_script", "start", "end")
+ 
+ 
+-# ------------------------------------------------------------------ ?좏떥
++# ?좏떥
+ def human(n):
+     for u in ("B", "KB", "MB", "GB", "TB"):
+         if n < 1024:
+@@ -83,7 +83,7 @@ def classify_json(path):
+         return kind, None
+ 
+ 
+-# ------------------------------------------------------------------ ?ㅼ틪
++# ?ㅼ틪
+ def scan(root):
+     root = Path(root)
+     if not root.exists():
+@@ -131,7 +131,7 @@ def guess_views(paths, root):
+     return tokens
+ 
+ 
+-# ------------------------------------------------------------------ 由ы룷??+# 由ы룷?? def report(root, videos, jsons, others, total_bytes, want_manifest):
+     line = "=" * 62
+     print(f"\n{line}\n  AI Hub ?섏뼱 ?곗씠?곗뀑 ?ㅼ틪 寃곌낵\n{line}")
+@@ -145,7 +145,7 @@ def report(root, videos, jsons, others, total_bytes, want_manifest):
+     if not videos and not jsons:
+         raise SystemExit("\n?곸긽??JSON ???놁뒿?덈떎. 寃쎈줈瑜??ㅼ떆 ?뺤씤?섏꽭??")
+ 
+-    # ---------------- 媛곷룄 ----------------
++    # 媛곷룄
+     print(f"\n?? 1. 媛곷룄(view) ??????????????????????????????????")
+     tk = guess_views(videos or jsons, root)
+     if tk:
+@@ -159,7 +159,7 @@ def report(root, videos, jsons, others, total_bytes, want_manifest):
+         print("  寃쎈줈?먯꽌 媛곷룄 ?좏겙??紐?李얠븯?듬땲??")
+         print("  ?대뜑 援ъ“瑜?吏곸젒 ?뺤씤??媛곷룄媛 ?섎돇???덈뒗吏 蹂댁꽭??")
+ 
+-    # ---------------- JSON 醫낅쪟 ----------------
++    # JSON 醫낅쪟
+     print(f"\n?? 2. JSON 醫낅쪟 ???????????????????????????????????")
+     kinds = Counter()
+     samples = {}
+@@ -175,7 +175,7 @@ def report(root, videos, jsons, others, total_bytes, want_manifest):
+         print(f"\n  [{k}] ?덉떆 援ъ“  ({p.relative_to(root)})")
+         print(schema(obj, depth=2, max_depth=7))
+ 
+-    # ---------------- ?ㅽ룷?명듃 ?뺤떇 寃利?----------------
++    # ?ㅽ룷?명듃 ?뺤떇 寃利?     print(f"\n?? 3. ?ㅽ룷?명듃 ?뺤떇 ???????????????????????????????")
+     if "keypoint" in samples:
+         _, obj = samples["keypoint"]
+@@ -203,7 +203,7 @@ def report(root, videos, jsons, others, total_bytes, want_manifest):
+         print("  ?ㅽ룷?명듃 JSON ???쒕낯???놁뒿?덈떎. ?곸긽留?諛쏆쑝?⑤떎硫?)
+         print("  MediaPipe 濡?吏곸젒 異붿텧?댁빞 ?⑸땲??(?ъ텛異?寃쎈줈).")
+ 
+-    # ---------------- ?댄쐶 遺꾪룷 ----------------
++    # ?댄쐶 遺꾪룷
+     print(f"\n?? 4. ?댄쐶 遺꾪룷 ???????????????????????????????????")
+     vocab = Counter()
+     signers = set()
+@@ -238,7 +238,7 @@ def report(root, videos, jsons, others, total_bytes, want_manifest):
+         print(f"\n  珥ъ쁺???꾨낫 {len(signers)}紐? {sorted(signers)[:10]}")
+         print("  ?붿옄 ?⑥쐞 ?됯?(GroupSplit)媛 媛?ν빀?덈떎. 諛섎뱶???닿구濡?痢≪젙?섏꽭??")
+ 
+-    # ---------------- ?곸긽 ?띿꽦 ----------------
++    # ?곸긽 ?띿꽦
+     if videos:
+         print(f"\n?? 5. ?곸긽 ?띿꽦 (?쒕낯 5媛? ????????????????????????")
+         try:
+diff --git a/tools/inspect_model.py b/tools/inspect_model.py
+index 8f00e83..645f7cf 100644
+--- a/tools/inspect_model.py
++++ b/tools/inspect_model.py
+@@ -22,7 +22,7 @@ import argparse
+ from pathlib import Path
+ 
+ 
+-# ---------------------------------------------------------------- ?먮퀎
++# ?먮퀎
+ def detect(p: Path):
+     if p.is_dir():
+         return "savedmodel" if (p / "saved_model.pb").exists() else "dir"
+@@ -81,7 +81,7 @@ def summary(in_dim, out_dim):
+     print("         蹂?섑빐?먮㈃ ?ㅽ뻾 ?섍꼍? onnxruntime ?섎굹濡??앸궔?덈떎.")
+ 
+ 
+-# ---------------------------------------------------------------- ONNX
++# ONNX
+ def show_onnx(p):
+     import onnxruntime as ort
+     sess = ort.InferenceSession(str(p), providers=["CPUExecutionProvider"])
+@@ -111,7 +111,7 @@ def show_onnx(p):
+     summary(in_dim, out_dim)
+ 
+ 
+-# ---------------------------------------------------------------- Keras / TF
++# Keras / TF
+ def show_keras(p):
+     import os
+     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+@@ -161,7 +161,7 @@ def show_tflite(p):
+             int(outd[0]["shape"][-1]) if outd else None)
+ 
+ 
+-# ---------------------------------------------------------------- PyTorch
++# PyTorch
+ def infer_io_torch(sd):
+     in_dim = out_dim = None
+     hidden = layers = 0
+@@ -246,7 +246,7 @@ def show_torch(p):
+     summary(in_dim, out_dim)
+ 
+ 
+-# ---------------------------------------------------------------- main
++# main
+ DISPATCH = {"onnx": show_onnx, "keras": show_keras, "savedmodel": show_savedmodel,
+             "tflite": show_tflite, "torch": show_torch}
+ 
+diff --git a/tools/profile_pipeline.py b/tools/profile_pipeline.py
+new file mode 100644
+index 0000000..985859e
+--- /dev/null
++++ b/tools/profile_pipeline.py
+@@ -0,0 +1,208 @@
++#!/usr/bin/env python
++"""?먮┛ ?명듃遺곸뿉???대뵒媛 ?먮┛吏 ?レ옄濡?蹂닿린 (李쎌쓣 ?꾩슦吏 ?딆뒿?덈떎).
++
++python tools/profile_pipeline.py --camera 0                  # 移대찓???ㅼ젣 珥덈떦 ?μ닔 + ?④퀎蹂??쒓컙
++python tools/profile_pipeline.py --camera 0 --compare-formats # MJPG ?붿껌 / ?쒕씪?대쾭 湲곕낯 ?뺤떇 鍮꾧탳
++python tools/profile_pipeline.py --video some.mp4             # 移대찓???놁씠 ?곸긽 ?뚯씪濡?+
++移대찓?쇰줈 諛쏆? ?꾨젅?꾩쓣 癒쇱? 紐⑥? ?? main.py ? 媛숈? ?④퀎瑜????꾨젅?꾩뵫 ?쎈땲??
++  capture        移대찓?쇨? ?ㅼ젣濡?以 珥덈떦 ?μ닔 (議곕챸쨌USB쨌?뺤텞 ?뺤떇??醫뚯슦)
++  holistic       ?먃룸じ ?몄떇. 鍮꾩쟾 ?ㅻ젅?쒖쓽 ?遺遺?+  face_detection ?쇨뎬 寃異?+  video_overlay  ?곸긽 ??留먰뭾??洹몃━湲?(硫붿씤 ?ㅻ젅?? 珥덈떦 VIDEO_OVERLAY_FPS 踰?
++  hud            ?덇꼍 ?붾㈃ 洹몃┝
++寃곌낵??'vision max fps' 媛 移대찓?쇰낫????쑝硫?CPU 媛, ?믪쑝硫?移대찓?쇨? 蹂묐ぉ?낅땲??
++"""
++import argparse
++import json
++import os
++import platform
++import statistics
++import sys
++import time
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++import config as C
++
++
++def grab_camera(index, seconds, fourcc):
++    """(frames, delivered fps, negotiated format) with the given FOURCC request."""
++    import cv2
++    from src.camera import fourcc_name, open_camera
++    saved = C.CAM_FOURCC
++    C.CAM_FOURCC = fourcc
++    try:
++        cap = open_camera(verbose=False, camera_index=index)
++    finally:
++        C.CAM_FOURCC = saved
++    if cap is None:
++        raise RuntimeError(f"移대찓??{index} 瑜??????놁뒿?덈떎")
++    try:
++        for _ in range(5):                     # ?몄텧쨌珥덉젏???먮━ ?〓뒗 泥??꾨젅?꾩? 踰꾨┝
++            cap.read()
++        frames, start = [], time.perf_counter()
++        while time.perf_counter() - start < seconds:
++            ok, frame = cap.read()
++            if ok:
++                frames.append(frame)
++        elapsed = time.perf_counter() - start
++        name = fourcc_name(cap.get(cv2.CAP_PROP_FOURCC))
++    finally:
++        cap.release()
++    if not frames:
++        raise RuntimeError("移대찓?쇱뿉???꾨젅?꾩쓣 諛쏆? 紐삵뻽?듬땲??)
++    return frames, len(frames) / elapsed, name
++
++
++def read_video(path, limit):
++    import cv2
++    cap = cv2.VideoCapture(str(path))
++    frames = []
++    while len(frames) < limit:
++        ok, frame = cap.read()
++        if not ok:
++            break
++        if frame.shape[1] != C.CAM_W:          # ?ㅽ뻾????移대찓???ш린濡?留욎땅?덈떎
++            frame = cv2.resize(frame, (C.CAM_W, C.CAM_H), interpolation=cv2.INTER_AREA)
++        frames.append(frame)
++    cap.release()
++    if not frames:
++        raise RuntimeError(f"{path} ?먯꽌 ?꾨젅?꾩쓣 ?쎌? 紐삵뻽?듬땲??)
++    return frames
++
++
++def measure(frames, warmup=5):
++    """main.py ? 媛숈? ?쒖꽌濡??④퀎蹂??쒓컙(ms)???쎈땲??"""
++    import cv2
++    import mediapipe as mp
++    from src import landmarks as L
++    from src.caption_state import CaptionEvent, CaptionState
++    from src.face_tracker import FaceTracker
++    from src.hud import HudContent, HudRenderer
++    from src.video_overlay import VideoOverlay
++
++    holistic = L.make_holistic(C.MODEL_COMPLEXITY)
++    detector = mp.solutions.face_detection.FaceDetection(model_selection=0,
++                                                         min_detection_confidence=0.5)
++    overlay, faces = VideoOverlay(), FaceTracker(C.FACE_LOST_SEC)
++    captions = CaptionState(C.CAPTION_HOLD_SEC, C.CAPTION_PARTIAL_TIMEOUT, C.FACE_LOST_SEC)
++    content = HudContent(HudRenderer())
++    stages = {k: [] for k in ("convert", "holistic", "face_detection", "video_overlay", "hud")}
++    try:
++        for i, frame in enumerate(frames):
++            h, w = frame.shape[:2]
++            t0 = time.perf_counter()
++            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
++            rgb.flags.writeable = False
++            t1 = time.perf_counter()
++            holistic.process(rgb)
++            t2 = time.perf_counter()
++            boxes = L.detection_face_boxes_px(detector.process(rgb), w, h)
++            t3 = time.perf_counter()
++            now = time.monotonic()
++            faces.update(boxes, (w, h), now)
++            if i == 0:                     # 留먰뭾?좎씠 蹂댁씠???곹깭濡??쎈땲??+                captions.update(CaptionEvent("final", "?대뵒媛 ?꾪봽?몄슂? 蹂묒썝??媛숈씠 媛 ?쒕┫源뚯슂?",
++                                             1, now), faces.current(now))
++            track = faces.current(now)
++            overlay.render(frame, captions, track, now, mirror=C.MIRROR_PREVIEW,
++                           tracks=faces.tracks(now), selected_id=faces.selected_id)
++            t4 = time.perf_counter()
++            content.partner("?대뵒媛 ?꾪봽?몄슂?", partial=False)
++            content.frame(track.center if track else None, (w, h))
++            t5 = time.perf_counter()
++            if i >= warmup:
++                for name, a, b in (("convert", t0, t1), ("holistic", t1, t2),
++                                   ("face_detection", t2, t3), ("video_overlay", t3, t4),
++                                   ("hud", t4, t5)):
++                    stages[name].append((b - a) * 1000)
++    finally:
++        holistic.close()
++        detector.close()
++    return {name: {"p50": statistics.median(v), "p95": sorted(v)[max(0, int(len(v) * .95) - 1)]}
++            for name, v in stages.items() if v}
++
++
++def advice(report):
++    lines = []
++    stage = report["stages"]
++    vision_ms = sum(stage[k]["p50"] for k in ("convert", "holistic", "face_detection"))
++    vision_fps = 1000 / max(vision_ms, 1e-6)
++    camera = report.get("camera_fps")
++    if camera is not None and camera < 20:
++        lines.append(f"移대찓?쇨? 珥덈떦 {camera:.0f}?λ쭔 以띾땲?? 議곕챸??諛앷쾶 ?섍퀬(?대몢?곕㈃ ?몄텧??湲몄뼱吏?, "
++                     "--compare-formats 濡?MJPG 媛 ?섎뒗吏 蹂댁꽭?? USB ?덈툕 ???蹂몄껜 ?ы듃瑜??곗꽭??")
++    if vision_fps < 15:
++        lines.append(f"CPU 媛 ?먃룸じ ?몄떇??珥덈떦 {vision_fps:.0f}踰덈쭔 泥섎━?⑸땲?? ?꾩썝???곌껐?섍퀬 "
++                     "?덈룄???꾩썝 紐⑤뱶瑜?'理쒓퀬 ?깅뒫'?쇰줈, ?ㅻⅨ ?꾨줈洹몃옩(釉뚮씪?곗? ?????レ쑝?몄슂. "
++                     "config.STT_THREADS = 1 ???쒕룄??蹂댁꽭??")
++    if stage["video_overlay"]["p50"] > 10:
++        lines.append("留먰뭾??洹몃━湲곌? ?먮┰?덈떎. config.VIDEO_OVERLAY_FPS 瑜?15 濡???떠 蹂댁꽭??")
++    if not lines:
++        lines.append("蹂묐ぉ??蹂댁씠吏 ?딆뒿?덈떎. ?ㅼ젣 ?ㅽ뻾?먯꽌 ?딄린硫?python main.py ... --stats 濡?"
++                     "STT쨌TTS 瑜??④퍡 耳??곹깭???④퀎蹂??쒓컙???뺤씤?섏꽭??")
++    return vision_fps, lines
++
++
++def main():
++    p = argparse.ArgumentParser(description=__doc__,
++                                formatter_class=argparse.RawDescriptionHelpFormatter)
++    source = p.add_mutually_exclusive_group()
++    source.add_argument("--camera", type=int, help="移대찓??踰덊샇 (湲곕낯: config.CAM_INDEX)")
++    source.add_argument("--video", help="移대찓????????곸긽 ?뚯씪")
++    p.add_argument("--seconds", type=float, default=4.0, help="移대찓?쇱뿉??諛쏅뒗 ?쒓컙")
++    p.add_argument("--frames", type=int, default=90, help="?곸긽 ?뚯씪?먯꽌 ???꾨젅????)
++    p.add_argument("--compare-formats", action="store_true",
++                   help="MJPG ?붿껌怨??쒕씪?대쾭 湲곕낯 ?뺤떇??珥덈떦 ?μ닔瑜?鍮꾧탳")
++    p.add_argument("--out", help="寃곌낵 JSON ???寃쎈줈")
++    args = p.parse_args()
++
++    import cv2
++    import mediapipe as mp
++    report = {"system": {"os": f"{platform.system()} {platform.release()}",
++                         "machine": platform.machine(), "cpus": os.cpu_count(),
++                         "python": platform.python_version(), "opencv": cv2.__version__,
++                         "mediapipe": mp.__version__}}
++    try:
++        if args.video:
++            frames = read_video(args.video, args.frames)
++            report["source"] = f"video {Path(args.video).name}"
++        else:
++            index = C.CAM_INDEX if args.camera is None else args.camera
++            formats = [C.CAM_FOURCC] + ([None] if args.compare_formats and C.CAM_FOURCC else [])
++            report["camera"] = {}
++            for fourcc in formats:
++                grabbed, fps, name = grab_camera(index, args.seconds, fourcc)
++                label = f"?붿껌 {fourcc}" if fourcc else "?쒕씪?대쾭 湲곕낯"
++                report["camera"][label] = {"fps": round(fps, 1), "format": name,
++                                           "size": list(grabbed[0].shape[1::-1])}
++                if fourcc == formats[0]:
++                    frames, report["camera_fps"] = grabbed, fps
++            report["source"] = f"camera {index}"
++        report["frames"] = len(frames)
++        report["stages"] = measure(frames)
++    except RuntimeError as error:
++        p.error(str(error))
++    vision_fps, tips = advice(report)
++    report["vision_max_fps"], report["advice"] = round(vision_fps, 1), tips
++
++    s = report["system"]
++    print(f"{s['os']} {s['machine']}, CPU {s['cpus']}媛? OpenCV {s['opencv']}, "
++          f"MediaPipe {s['mediapipe']} | {report['source']}, {report['frames']}?꾨젅??)
++    for label, cam in report.get("camera", {}).items():
++        print(f"  移대찓??({label}): 珥덈떦 {cam['fps']}?? ?뺤떇 {cam['format']}, "
++              f"{cam['size'][0]}x{cam['size'][1]}")
++    for name, v in report["stages"].items():
++        print(f"  {name:15s} p50 {v['p50']:6.1f} ms   p95 {v['p95']:6.1f} ms")
++    print(f"  vision max fps  {report['vision_max_fps']} (?먃룸じ ?몄떇 + ?쇨뎬 寃異?湲곗?)")
++    for tip in tips:
++        print("  -", tip)
++    if args.out:
++        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
++        Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=2),
++                                  encoding="utf-8")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/to_onnx.py b/tools/to_onnx.py
+index f5c9e50..c9a2033 100644
+--- a/tools/to_onnx.py
++++ b/tools/to_onnx.py
+@@ -39,7 +39,7 @@ def report(a, b):
+     return False
+ 
+ 
+-# ---------------------------------------------------------------- Keras
++# Keras
+ def from_keras(src, dst, seq_len, opset):
+     import os
+     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+@@ -65,7 +65,7 @@ def from_keras(src, dst, seq_len, opset):
+     return x, m.predict(x, verbose=0)
+ 
+ 
+-# ---------------------------------------------------------------- PyTorch
++# PyTorch
+ def load_torch_model(src, arch, in_dim, classes, trust_pickle=False):
+     import torch
+     import torch.nn as nn
+@@ -146,7 +146,7 @@ def from_torch(src, dst, arch, in_dim, classes, seq_len, opset, trust_pickle=Fal
+     return x.numpy(), ref.numpy()
+ 
+ 
+-# ---------------------------------------------------------------- main
++# main
+ def main():
+     ap = argparse.ArgumentParser()
+     ap.add_argument("src")

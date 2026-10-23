@@ -54,7 +54,7 @@ def fourcc_name(value):
 def _apply_manual_exposure(cap, cv2, verbose):
     """
     백엔드마다 값 규약이 다릅니다.
-        DSHOW(Windows) : AUTO_EXPOSURE 0.25=수동 / 0.75=자동, EXPOSURE 는 log2 초
+        DSHOW(Windows) : AUTO_EXPOSURE 0=수동 / 1=자동, EXPOSURE 는 log2 초
         V4L2(Linux)    : AUTO_EXPOSURE 1=수동 / 3=자동
         AVFoundation(macOS) : OpenCV 노출 제어를 대부분 무시합니다
     """
@@ -65,19 +65,28 @@ def _apply_manual_exposure(cap, cv2, verbose):
                   "         Windows 쪽에서 하세요. (같은 조건으로 통일하는 게 중요)")
         return
 
-    auto_off = 0.25 if C.IS_WIN else 1
-    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, auto_off)
-    cap.set(cv2.CAP_PROP_EXPOSURE, C.CAM_EXPOSURE)
+    auto_off = 0 if C.IS_WIN else 1
+    manual_ok = cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, auto_off)
+    exposure_ok = cap.set(cv2.CAP_PROP_EXPOSURE, C.CAM_EXPOSURE)
+    gain_ok = None
     if C.CAM_GAIN is not None:
-        cap.set(cv2.CAP_PROP_GAIN, C.CAM_GAIN)
+        gain_ok = cap.set(cv2.CAP_PROP_GAIN, C.CAM_GAIN)
 
     got = cap.get(cv2.CAP_PROP_EXPOSURE)
+    auto = cap.get(cv2.CAP_PROP_AUTO_EXPOSURE)
     if verbose:
-        if abs(got - C.CAM_EXPOSURE) < 1.5:
-            print(f"[camera] 수동 노출 고정 {got}")
+        applied = (manual_ok and exposure_ok and abs(auto - auto_off) < 0.01
+                   and abs(got - C.CAM_EXPOSURE) < 0.01)
+        if applied:
+            print(f"[camera] 수동 노출 적용 (드라이버 보고 {got})")
         else:
-            print(f"[camera] 수동 노출 미지원 (요청 {C.CAM_EXPOSURE}, 실제 {got}).\n"
-                  f"         UVC 수동 노출을 지원하는 카메라로 바꾸면 인식률이 오릅니다.")
+            print(f"[camera] 수동 노출 적용 확인 실패 (요청 {C.CAM_EXPOSURE}, "
+                  f"드라이버 보고 {got}, 자동 노출 {auto}).\n"
+                  "         카메라 드라이버 설정에서 자동 노출을 끄고 노출을 낮추세요.")
+        if C.CAM_GAIN is not None:
+            gain = cap.get(cv2.CAP_PROP_GAIN)
+            status = "적용" if gain_ok and abs(gain - C.CAM_GAIN) < 0.01 else "적용 확인 실패"
+            print(f"[camera] 게인 {status} (요청 {C.CAM_GAIN}, 드라이버 보고 {gain})")
 
 
 class CameraReader:
