@@ -10,6 +10,7 @@
 """
 import sys
 import queue
+import re
 import threading
 from pathlib import Path
 
@@ -20,14 +21,27 @@ from src.build_tts_cache import (cache_key, legacy_aliases, legacy_cache_path,
                                   normalize_tts_text)
 
 
+def is_korean_voice(voice):
+    """언어 메타데이터도 확인하고 Kyoko 같은 이름의 'ko'는 제외합니다."""
+    languages = getattr(voice, "languages", []) or []
+    if isinstance(languages, (str, bytes)):
+        languages = [languages]
+    parts = [getattr(voice, "id", ""), getattr(voice, "name", "")] + list(languages)
+    text = " ".join(p.decode("utf-8", errors="ignore") if isinstance(p, bytes)
+                    else str(p) for p in parts).lower()
+    return bool(re.search(r"(?:^|[^a-z])(?:ko(?:-kr|_kr)?|korean|heami|yuna|0412)(?:$|[^a-z])",
+                          text))
+
+
 class TtsPlayer(threading.Thread):
-    daemon = True
 
     def __init__(self, preload=True, gate=None, stats=None):
-        super().__init__(name="tts")
+        super().__init__(name="tts", daemon=True)
         from src.latency import NullTracker
         self.stats = stats or NullTracker()
         self.q = queue.Queue()
+        self.events = queue.Queue()
+        self._com = None
         # ★ 이름을 _stop 으로 두면 안 됩니다.
         # threading.Thread 에는 _stop() 이라는 내부 메서드가 있고, join() 이
         # 스레드 종료를 확인한 뒤 그걸 호출합니다. Event 로 덮어쓰면
@@ -76,7 +90,8 @@ class TtsPlayer(threading.Thread):
         큐에 넣은 시각도 같이 싣습니다. 소리가 나기 시작할 때까지의 시간
         (큐 대기 + 오디오 장치 열기)이 Phase 1 지연의 마지막 조각입니다.
         """
-        self.q.put((text, clock.now(), origin_t))
+        if text and text.strip():
+            self.q.put((text.strip(), clock.now(), origin_t))
 
     def stop(self):
         self._quit.set()
@@ -90,18 +105,29 @@ class TtsPlayer(threading.Thread):
         return item, 0.0, 0.0
 
     def run(self):
-        while not self._quit.is_set():
-            item = self.q.get()
-            if item is None:
-                break
-            # 큐가 밀렸으면 오래된 발화는 버립니다 (대화가 어긋나는 것보다 낫습니다)
-            while not self.q.empty():
-                nxt = self.q.get_nowait()
-                if nxt is None:
-                    return
-                item = nxt
-            text, t_say, origin_t = self._unpack(item)
-            self._play(text, t_say, origin_t)
+        try:
+            while not self._quit.is_set():
+                item = self.q.get()
+                if item is None:
+                    break
+                # 확정된 문장은 프레임이 아닙니다. FIFO로 한 번씩 모두 발화합니다.
+                text, t_say, origin_t = self._unpack(item)
+                try:
+                    self._play(text, t_say, origin_t)
+                except Exception as exc:
+                    print(f"[tts] 음성 출력 실패: {exc}", flush=True)
+                    self.events.put({"ok": False, "text": text, "error": str(exc)})
+                else:
+                    self.events.put({"ok": True, "text": text, "error": ""})
+        finally:
+            if self._fallback is not None:
+                try:
+                    self._fallback.stop()
+                except Exception:
+                    pass
+                self._fallback = None
+            if self._com is not None:
+                self._com.CoUninitialize()
 
     def _play(self, text, t_say=0.0, origin_t=0.0):
         # 재생하는 동안 마이크를 막습니다(반이중).
@@ -138,28 +164,56 @@ class TtsPlayer(threading.Thread):
 
     def _speak_fallback(self, text):
         """캐시에 없을 때 OS 내장 음성으로. macOS=Yuna, Windows=Heami."""
+        if sys.platform == "win32" and self._com is None:
+            import pythoncom
+            pythoncom.CoInitialize()
+            self._com = pythoncom
+        import pyttsx3
+        if self._fallback is None:
+            eng = pyttsx3.init()
+            voice = next((v for v in eng.getProperty("voices") if is_korean_voice(v)), None)
+            if voice is None:
+                eng.stop()
+                raise RuntimeError("OS 한국어 TTS 음성이 없습니다. 한국어 음성을 설치하거나 "
+                                   "python -m src.build_tts_cache 로 WAV 캐시를 생성하세요.")
+            eng.setProperty("voice", voice.id)
+            eng.setProperty("rate", 170)
+            self._fallback = eng
+            print(f"[tts] OS 한국어 음성: {voice.name}", flush=True)
+        eng = self._fallback
+        errors, finished = [], []
+        tokens = [eng.connect("error", lambda name, exception: errors.append(str(exception))),
+                  eng.connect("finished-utterance", lambda name, completed: finished.append(completed))]
         try:
-            import pyttsx3
-            if self._fallback is None:
-                eng = pyttsx3.init()
-                for v in eng.getProperty("voices"):
-                    s = f"{getattr(v, 'id', '')} {getattr(v, 'name', '')}".lower()
-                    if "ko" in s or "korean" in s or "heami" in s or "yuna" in s:
-                        eng.setProperty("voice", v.id)
-                        break
-                eng.setProperty("rate", 170)
-                self._fallback = eng
-            self._fallback.say(text)
-            self._fallback.runAndWait()
-        except Exception as e:
-            print(f"[tts] '{text}' (음성 출력 불가: {e})")
+            eng.say(text)
+            eng.runAndWait()
+            if errors or not finished or not all(finished):
+                raise RuntimeError("; ".join(errors) or "TTS 엔진이 발화를 완료하지 못했습니다")
+        finally:
+            for token in tokens:
+                eng.disconnect(token)
+
+
+def test_output(text="안녕하세요. 음성 출력 테스트입니다.", timeout=30):
+    """앱과 같은 워커/캐시/OS 엔진으로 검사. 성공은 청취 확인을 대신하지 않습니다."""
+    if not text or not text.strip():
+        print("[tts] 테스트 문장을 입력하세요")
+        return False
+    player = TtsPlayer()
+    player.start()
+    player.say(text)
+    try:
+        result = player.events.get(timeout=timeout)
+        if result["ok"]:
+            print("[tts] 재생 처리가 완료됐습니다. 실제로 들리는지와 출력 장치를 확인하세요.")
+        return result["ok"]
+    except queue.Empty:
+        print("[tts] 출력 시간 초과: OS 음성 엔진과 기본 스피커를 확인하세요")
+        return False
+    finally:
+        player.stop()
+        player.join(timeout=2)
 
 
 if __name__ == "__main__":
-    import time
-    t = TtsPlayer()
-    t.start()
-    for s in ["안녕하세요", "얼마예요?", "감사합니다"]:
-        t.say(s)
-        time.sleep(1.5)
-    t.stop()
+    raise SystemExit(0 if test_output() else 1)
