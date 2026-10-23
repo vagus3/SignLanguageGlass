@@ -28,7 +28,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as C
 from src import clock
-from src import landmarks as L
 from src.one_euro import OneEuroPoint
 
 
@@ -65,12 +64,14 @@ def draw_segment_overlay(cv2, frame, recorder, segmenter):
 class VisionThread(threading.Thread):
     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
                  segment_recorder=None, pose_3d=False, segmenter=None, segment_events=None,
-                 track_face=True, preview_hands=False):
+                 track_face=True, preview_hands=False, predictor=None, word_events=None):
         # daemon 을 클래스 속성으로 두면 Thread.daemon 프로퍼티를 가려서
         # 내부 _daemonic 플래그와 어긋납니다. 생성자로 넘겨야 안전합니다.
         super().__init__(name="vision", daemon=True)
         self.out = out_q
         self.enable_sign = enable_sign
+        self.predictor = predictor
+        self.word_events = word_events if word_events is not None else queue.Queue()
         self.preview_hands = preview_hands
         self.camera_index = camera_index
         self.segment_recorder = segment_recorder
@@ -92,6 +93,7 @@ class VisionThread(threading.Thread):
 
     def run(self):
         import cv2
+        from src import landmarks as L
         from src.camera import CameraReader
         from src.pose_sequence import from_mediapipe, world_from_mediapipe
 
@@ -110,14 +112,12 @@ class VisionThread(threading.Thread):
                 face_detector = mp.solutions.face_detection.FaceDetection(
                     model_selection=0, min_detection_confidence=0.5)
 
-            predictor = None
+            predictor = self.predictor
             if self.enable_sign:
-                try:
+                if predictor is None:
                     from src.predictor import SignPredictor
                     predictor = SignPredictor()
-                    print(f"[vision] 모델 로드 완료 ({len(predictor.labels)} 클래스)")
-                except Exception as e:
-                    print(f"[vision] 수어 모델 없음 -> Phase 2 만 동작합니다\n         {e}")
+                print(f"[vision] 모델 로드 완료 ({len(predictor.labels)} 클래스)")
 
             smooth = OneEuroPoint(C.FILTER_MIN_CUTOFF, C.FILTER_BETA)
             t_prev, n = clock.now(), 0
@@ -171,6 +171,8 @@ class VisionThread(threading.Thread):
                     st.add("infer", predictor.last_ms)
                     if word:
                         word_t = clock.now()
+                        # 확정 단어는 최신 영상만 남기는 큐에서 버리면 안 됩니다.
+                        self.word_events.put({"word": word, "word_t": word_t})
                         # 확정을 만든 추론에 쓰인 최신 프레임부터 확정까지
                         st.add("recognition",
                                (word_t - predictor.last_frame_t) * 1000)
@@ -192,10 +194,11 @@ class VisionThread(threading.Thread):
                     t_prev, n = now, 0
 
                 self._emit(("frame", {
-                    "frame": frame, "face": face, "word": word,
+                    "frame": frame, "face": face,
                     "face_boxes": face_boxes, "captured_at": t_cap,
                     "hand_count": len(getattr(hand_res, "multi_hand_landmarks", None) or []),
-                    "word_t": word_t,
+                    "sign_hand_count": sum(bool(getattr(res, name, None)) for name in
+                                           ("left_hand_landmarks", "right_hand_landmarks")),
                     "size": (w, h), "fps": self.fps,
                     "in_fps": getattr(predictor, "last_fps", 0.0),
                     "conf": getattr(predictor, "last_conf", 0.0),
@@ -240,6 +243,7 @@ class FaceThread(threading.Thread):
         self._quit.set()
 
     def run(self):
+        from src import landmarks as L
         import cv2
         import mediapipe as mp
         from src.camera import CameraReader
@@ -312,6 +316,10 @@ def main():
                     help="음성 인식 엔진 (기본: config.STT_BACKEND)")
     ap.add_argument("--no-sign", action="store_true")
     ap.add_argument("--no-tts", action="store_true")
+    ap.add_argument("--test-tts", nargs="?", const="안녕하세요. 음성 출력 테스트입니다.",
+                    metavar="TEXT", help="카메라·수어 모델 없이 실제 TTS 재생 경로만 검사")
+    ap.add_argument("--sign-model", metavar="PATH", help="local 단어 인식 모델 경로")
+    ap.add_argument("--sign-labels", metavar="PATH", help="local 모델의 labels.json 경로")
     ap.add_argument("--sign-backend", choices=["local", "cloud"], default="local",
                     help="기존 ONNX 단어 인식 또는 서버의 연속 수어 번역")
     ap.add_argument("--cloud-controls", choices=["keyboard", "stdin"], default="keyboard",
@@ -352,6 +360,13 @@ def main():
                     help="지연을 구간별로 측정해 종료 시 p50/p95 를 출력합니다. "
                          "경로를 주면 실행 전체의 원본 표본을 CSV 로 계속 기록합니다.")
     a = ap.parse_args()
+    if a.test_tts is not None:
+        if a.no_tts:
+            ap.error("--test-tts 와 --no-tts 는 함께 사용할 수 없습니다")
+        from src.tts_player import test_output
+        raise SystemExit(0 if test_output(a.test_tts) else 1)
+    if (a.sign_model or a.sign_labels) and (a.no_sign or a.sign_backend != "local"):
+        ap.error("--sign-model/--sign-labels 는 local 수어 인식에서만 사용합니다")
     for name in ("exposure", "gain"):
         value = getattr(a, name)
         if value is not None and not math.isfinite(value):
@@ -382,6 +397,18 @@ def main():
              else NullTracker())
 
     load_calib()
+
+    # 수어가 꺼진 채 카메라만 실행되는 것을 막고, 장치를 열기 전에 실패합니다.
+    predictor = None
+    if not a.no_sign and a.sign_backend == "local":
+        try:
+            from src.predictor import SignPredictor
+            predictor = SignPredictor(a.sign_model, a.sign_labels)
+        except Exception as exc:
+            ap.error(f"수어 인식을 시작할 수 없습니다: {exc}\n"
+                     "학습된 모델과 라벨을 준비하세요. 손 관절 표시만으로 수어가 인식되지는 않습니다.\n"
+                     "음성만 검사: python main.py --test-tts\n"
+                     "음성 자막만 실행: python main.py --no-sign")
 
     # 스피커 출력이 마이크로 되돌아오는 에코 루프를 막는 게이트.
     # 유선 이어폰으로 들을 때는 --no-gate 로 꺼도 됩니다.
@@ -429,11 +456,12 @@ def main():
     except ValueError as e:
         ap.error(str(e))
     vq = queue.Queue(maxsize=1) if need_vision else None
+    word_events = queue.Queue()
     vision = (VisionThread(vq, enable_sign=not a.no_sign and cloud is None, stats=stats,
                            camera_index=sign_index, segment_recorder=recorder,
                            pose_3d=a.pose_3d, segmenter=segmenter, segment_events=commands,
                            track_face=not a.fixed_caption and not separate_face,
-                           preview_hands=a.debug)
+                           preview_hands=a.debug, predictor=predictor, word_events=word_events)
               if need_vision else None)
     if vision:
         vision.start()
@@ -493,6 +521,7 @@ def main():
         controller = CloudController(cloud, recorder, content, tts=tts, stats=stats)
 
     pending_word_t = 0.0        # 아직 발화 안 된 단어가 확정된 시각
+    last_sign_log = float("-inf")
     last_face, last_size = None, (C.CAM_W, C.CAM_H)
 
     has_window = bool(video_enabled or transcript_open or (a.debug and (vision or face_thread))
@@ -518,6 +547,20 @@ def main():
             cv2.namedWindow(video_window, cv2.WINDOW_AUTOSIZE)
             cv2.setMouseCallback(video_window, video_mouse)
         while True:
+            # 확정 결과는 영상 프레임 드롭과 무관하게 한 번씩 처리합니다.
+            while not word_events.empty():
+                word_event = word_events.get_nowait()
+                print(f"[수어] {word_event['word']}", flush=True)
+                sentence = phrase.feed(word_event["word"])
+                if sentence:
+                    speak(sentence, tts, stats, word_event["word_t"], show=content.own)
+                else:
+                    pending_word_t = word_event["word_t"]
+            if tts is not None:
+                while not tts.events.empty():
+                    event = tts.events.get_nowait()
+                    if not event["ok"]:
+                        content.status("음성 출력 실패: 터미널을 확인하세요")
             # ---- 비전 ----
             try:
                 if vq is None:
@@ -525,6 +568,7 @@ def main():
                 kind, payload = vq.get(timeout=0.05)
                 if kind == "error":
                     print("[vision]", payload, "-> 고정 자막으로 계속합니다")
+                    content.status("카메라/수어 처리 오류: 터미널을 확인하세요")
                     vq = None
                     if face_thread is None:
                         faces.clear()
@@ -537,16 +581,15 @@ def main():
                                  payload.get("captured_at", clock.now()))
                     camera_frame = payload["frame"]
                     camera_frame_at = payload.get("captured_at", clock.now())
-                if payload["word"]:
-                    print(f"[수어] {payload['word']}")
-                    # 여기서 바로 발화하지 않습니다. 조합 규칙이 완성될 수도
-                    # 있어서, 완성되면 문장으로 / 아니면 poll() 이 흘려보냅니다.
-                    sentence = phrase.feed(payload["word"])
-                    if sentence:
-                        speak(sentence, tts, stats, payload["word_t"], show=content.own)
-                    else:
-                        pending_word_t = payload["word_t"]
                 if a.debug:
+                    if not a.no_sign and clock.now() - last_sign_log >= 2:
+                        last_sign_log = clock.now()
+                        state = (f"클라우드 구간={'녹화 중' if recorder.active else '대기'}"
+                                 if recorder is not None else
+                                 f"후보={payload['raw']} 신뢰도={payload['conf']:.2f} "
+                                 f"(확정 기준={C.CONF_THRESHOLD:.2f})")
+                        print(f"[수어 상태] 인식용 손={payload.get('sign_hand_count', 0)}/2 "
+                              f"{state}", flush=True)
                     v = payload["frame"]
                     if v.shape[1] > C.DEBUG_PREVIEW_W:     # smaller window, cheaper to draw
                         scale = C.DEBUG_PREVIEW_W / v.shape[1]

@@ -294,27 +294,13 @@ def check_mic():
 def check_tts():
     section("6. 한국어 TTS")
     try:
-        import pyttsx3
-
-        eng = pyttsx3.init()
-        voices = eng.getProperty("voices")
-        ko = [v for v in voices if "ko" in str(getattr(v, "id", "")).lower()
-              or "korean" in str(getattr(v, "name", "")).lower()
-              or "heami" in str(getattr(v, "name", "")).lower()]
-        if ko:
-            ok(f"한국어 음성 발견: {ko[0].name}")
-            eng.setProperty("voice", ko[0].id)
+        from src.tts_player import test_output
+        if test_output():
+            ok("앱의 TTS 워커 재생 처리 완료 (실제 청취 여부는 직접 확인)")
         else:
-            warn(
-                "OS에 한국어 TTS 음성이 없습니다",
-                "윈도우: 설정 > 시간 및 언어 > 음성 > 음성 추가 에서 한국어 설치. "
-                "또는 edge-tts 로 wav 를 미리 캐싱하세요 (권장)",
-            )
-        eng.say("환경 점검을 완료했습니다")
-        eng.runAndWait()
-        ok("TTS 재생 성공")
+            fail("TTS 출력 실패", "위 [tts] 오류와 OS 기본 출력 장치/한국어 음성을 확인하세요")
     except Exception as e:
-        warn(f"pyttsx3 실패: {e}", "edge-tts 사전 캐싱 방식으로 대체 가능합니다")
+        fail(f"TTS 검사 실패: {e}", "python main.py --test-tts 로 별도 확인하세요")
 
 
 # 7. 실행 산출물

@@ -58,11 +58,12 @@ class Detector:
 camera = Camera()
 holistic, detector = Detector(empty), Detector(hands)
 with patch("src.camera.CameraReader", return_value=camera), \
-        patch.object(L, "make_holistic", return_value=holistic), \
+        patch.object(L, "make_holistic", return_value=holistic) as make_holistic, \
         patch.object(L, "make_preview_hands", return_value=detector):
     worker.run()
 kind, payload = out.get_nowait()
 assert kind == "frame" and payload["hand_count"] == 1
 assert payload["frame"][96, 64].any(), "Hands must display even when Holistic finds none"
-assert camera.closed and holistic.closed and detector.closed
+make_holistic.assert_not_called()  # --no-sign uses only the independent hand preview.
+assert camera.closed and not holistic.closed and detector.closed
 print("[OK] hand-only preview, coordinates, mirroring, independent detection and cleanup")

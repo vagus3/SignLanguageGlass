@@ -41,6 +41,7 @@ class SignPredictor:
     def __init__(self, model_path=None, labels_path=None):
         from src.runtime import SignRuntime
 
+        custom_model = model_path is not None
         model_path = Path(model_path or C.MODEL_PATH)
         if not model_path.exists():
             raise FileNotFoundError(
@@ -48,7 +49,8 @@ class SignPredictor:
                 f"  학습/ONNX 생성:  python -m src.train")
 
         labels = None
-        labels_path = Path(labels_path or C.LABELS_PATH)
+        labels_path = Path(labels_path or (model_path.parent / "labels.json"
+                                          if custom_model else C.LABELS_PATH))
         if labels_path.exists():
             labels = json.loads(labels_path.read_text(encoding="utf-8"))
 
@@ -114,8 +116,10 @@ class SignPredictor:
                 f"라벨 개수 불일치: {C.LABELS_PATH.name} {len(labels)}개 vs 모델 {n}개\n"
                 f"  config.VOCAB 을 고친 뒤 재학습을 안 했거나, labels.json 이\n"
                 f"  다른 모델의 것입니다. 이대로 돌리면 엉뚱한 단어를 발화합니다.")
-        if n and not labels:
-            print(f"[predictor] {C.LABELS_PATH} 가 없습니다. 숫자 인덱스로 표시합니다.")
+        if not labels or not isinstance(labels, list) or not all(
+                isinstance(label, str) and label.strip() for label in labels):
+            self._fail("수어 라벨이 없거나 올바르지 않습니다. 모델에 맞는 labels.json 또는 "
+                       "*_preproc.json의 labels가 필요합니다. 숫자 인덱스는 발화하지 않습니다.")
 
     def push(self, feature, t=None):
         """
