@@ -132,8 +132,10 @@ def wait_key(delay):
         assert rendered["caption_id"] is None, "A future face cannot own an older event"
         emit("final", "얼굴 없는 발화", 3)
     elif step == 9:
+        # The later final was recognised while that face was on camera: the speaker
+        # came into view mid-utterance, so the bubble binds to them from then on.
         assert len(state["records"]) == 3
-        assert state["records"][2].track_id is None
+        assert state["records"][2].track_id == rendered["track_id"] == rendered["caption_id"]
         return ord("q")
     else:
         raise AssertionError("Main did not complete the scripted interaction")

@@ -394,9 +394,9 @@ python tests/run_all.py adaptive # 이름으로 골라서
   └─ STT + 얼굴 추적 ──▶ 영상 말풍선 / 대화 기록 / OLED 별도 미리보기
 ```
 
-실행 환경은 `requirements.txt`, 기본 디스플레이는 `--display preview`입니다.
-영상 말풍선만 보려면 `--display null --video-captions`로 선택할 수 있습니다.
-이 옵션은 OLED 미리보기 창을 숨길 뿐 관련 코드를 삭제하지 않습니다.
+실행 환경은 `requirements.txt`입니다. 카메라가 있으면 자막은 영상 위 말풍선 창에만
+표시하고, 안경(OLED) 시뮬레이션 창은 `--display preview`를 줄 때만 엽니다.
+카메라 없이 실행하면(`--fixed-caption`) 기존처럼 OLED 미리보기를 기본으로 씁니다.
 
 휴대폰 연동은 다음 클라이언트 후보이며 아직 구현되지 않았습니다. 안경은 입력·표시 장치로
 연동하는 방향을 검토하고, VLM은 클라우드에서 실행합니다. 실제 OLED 패널은 별도 구동
@@ -595,16 +595,19 @@ Qwen2.5-VL 영상 인식은 아직 연결돼 있지 않습니다.
 
 ```bash
 # 수어 모델 없이 STT + 얼굴 옆 말풍선 시연 (한국어 STT 모델은 필요)
-python main.py --no-sign --no-tts --display preview --video-captions --transcript
+python main.py --no-sign --no-tts
 
-# 영상 창만 사용하고 OLED 시뮬레이션은 표시하지 않기
-python main.py --no-sign --no-tts --display null --video-captions
+# 말풍선 + 대화 기록 창 + OLED 시뮬레이션 함께 보기
+python main.py --no-sign --no-tts --display preview --transcript
 
 # 기존 OLED 미리보기만 사용
 python main.py --no-sign --display preview --no-video-captions
 ```
 
-`preview` 출력에서 얼굴 카메라를 사용하면 영상 말풍선 창도 기본 활성화됩니다.
+말풍선은 말을 시작할 때 화면에 보이던 얼굴에 붙습니다. 그때 얼굴이 없었으면 처음
+보이는 얼굴에 한 번 붙습니다. 손이나 고개 돌림으로 얼굴이 잠깐 가려져도 그 사람이
+있던 자리에 남고, 다른 얼굴로 옮겨 가지 않습니다. 말하는 동안 얼굴이 한 번도
+보이지 않은 발화만 화면 아래 고정 자막으로 표시합니다.
 `--fixed-caption`은 카메라 없는 고정 자막 경로를 유지합니다. 별도 얼굴 카메라를
 쓰면 말풍선은 그 영상 위에 표시하며, 한 카메라에서는 미러링된 영상과 얼굴
 좌표를 함께 뒤집습니다. OLED 별도 미리보기는 기존 시야/광학 보정 좌표를 유지합니다.

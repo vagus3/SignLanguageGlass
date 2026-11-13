@@ -19,6 +19,8 @@ class CaptionState:
         self.text = ""
         self.partial = False
         self.track_id = None
+        self.held = None        # last box of the bound face, kept while it is hidden
+        self.released = None    # utterance whose partner was changed: stays unbound
         self.updated_at = float("-inf")
         self.expires_at = float("-inf")
 
@@ -31,16 +33,21 @@ class CaptionState:
             self.text = ""
             self.partial = False
             self.track_id = None
+            self.held = None
             self.utterance_id = event.utterance_id
             self.expires_at = event.observed_at
             return True
         if event.kind not in ("partial", "final") or not event.text.strip():
             return False
+        # A delayed STT event must not bind to a much newer camera frame.
+        fresh = track and 0 <= event.observed_at - track.seen_at <= self.anchor_max_age
         if event.utterance_id != self.utterance_id:
-            # A delayed STT event must not bind to a much newer camera frame.
-            fresh = track and 0 <= event.observed_at - track.seen_at <= self.anchor_max_age
             self.track_id = track.track_id if fresh else None
+            self.held = track if fresh else None
             self.utterance_id = event.utterance_id
+        elif self.held is None and fresh and self.released != event.utterance_id:
+            # The speaker came into view mid-utterance: bind once, never re-bind later.
+            self.track_id, self.held = track.track_id, track
         self.text = event.text.strip()
         self.partial = event.kind == "partial"
         self.updated_at = event.observed_at
@@ -52,15 +59,21 @@ class CaptionState:
     def release_anchor(self):
         """Changing the selected partner affects subsequent utterances only."""
         self.track_id = None
+        self.held = None
+        self.released = self.utterance_id
 
     def visible(self, now):
         return bool(self.text) and now < self.expires_at
 
     def anchor(self, track, now):
-        if not self.visible(now):
+        """The bound face, or where it was last seen while it is hidden.
+
+        Signing hands and turned heads hide a face for a moment; the bubble stays
+        where that speaker was instead of dropping to a bottom caption. It never
+        jumps to another face: a track with a different ID is ignored.
+        """
+        if not self.visible(now) or self.held is None:
             return None
-        if track is None or track.track_id != self.track_id:
-            # Once lost, this utterance must never jump to another face.
-            self.track_id = None
-            return None
-        return track
+        if track is not None and track.track_id == self.track_id:
+            self.held = track
+        return self.held

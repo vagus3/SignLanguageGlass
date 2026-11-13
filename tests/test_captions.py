@@ -21,14 +21,36 @@ state.update(CaptionEvent("cancel", "", 2, 11.1), None)
 state.update(CaptionEvent("partial", "늦게 도착한 결과", 2, 11.2), face)
 assert not state.visible(11.2), "A cancelled utterance cannot be resurrected"
 
+# A hidden face (hands in front of it, head turned) keeps the bubble where the
+# speaker was; it never moves to a different face, even one in the same place.
 state.update(CaptionEvent("partial", "안녕하세요", 3, 12.0),
              FaceTrack(1, face.box, 12.0))
-assert state.anchor(None, 12.1) is None
+assert state.anchor(None, 12.1).box == face.box
+moved = FaceTrack(1, (110, 50, 170, 130), 12.15)
+assert state.anchor(moved, 12.15).box == moved.box, "follows the same face"
 state.update(CaptionEvent("final", "안녕하세요", 3, 12.2),
              FaceTrack(2, face.box, 12.2))
-assert state.anchor(FaceTrack(2, face.box, 12.3), 12.3) is None
+other = state.anchor(FaceTrack(2, (300, 50, 360, 130), 12.3), 12.3)
+assert other.track_id == 1 and other.box == moved.box, "never jumps to another face"
 state.update(CaptionEvent("cancel", "", 2, 12.4), None)
 assert state.text == "안녕하세요", "Old cancellation must not erase a new utterance"
+
+# No face when speech starts: bind to the speaker who comes into view, then hold.
+late = CaptionState()
+late.update(CaptionEvent("partial", "저기요", 4, 13.0), None)
+assert late.anchor(None, 13.0) is None, "nobody on camera: fixed caption"
+late.update(CaptionEvent("partial", "저기요 잠깐만", 4, 13.5), FaceTrack(5, face.box, 13.5))
+assert late.anchor(None, 13.6).track_id == 5
+late.update(CaptionEvent("final", "저기요 잠깐만요", 4, 13.8), FaceTrack(6, face.box, 13.8))
+assert late.anchor(None, 13.9).track_id == 5, "bound once, not re-bound"
+# Choosing another partner mid-utterance applies from the next utterance.
+late.update(CaptionEvent("partial", "다음", 5, 20.0), FaceTrack(7, face.box, 20.0))
+late.release_anchor()
+assert late.anchor(None, 20.1) is None
+late.update(CaptionEvent("partial", "다음 말", 5, 20.2), FaceTrack(8, face.box, 20.2))
+assert late.anchor(None, 20.3) is None
+late.update(CaptionEvent("partial", "새 문장", 6, 21.0), FaceTrack(8, face.box, 21.0))
+assert late.anchor(None, 21.1).track_id == 8
 
 tracker = FaceTracker()
 track = tracker.update([face.box], (640, 480), 20.0)
@@ -89,4 +111,5 @@ assert history.append(CaptionEvent("final", "두 번째", 2, 51), None)
 assert history.append(CaptionEvent("final", "세 번째", 3, 52), 2)
 assert [r.utterance_id for r in history.records] == [2, 3]
 
-print("[OK] Caption lifecycle, cancellation, face selection/loss/ambiguity, bounded history")
+print("[OK] Caption lifecycle, cancellation, held bubble on face loss, late binding, "
+      "face selection/ambiguity, bounded history")

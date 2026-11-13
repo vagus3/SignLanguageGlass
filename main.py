@@ -347,10 +347,11 @@ def main():
     ap.add_argument("--gain", type=float, default=None, metavar="VALUE",
                     help="카메라 수동 게인 (과노출이면 0부터 시도, 지원 범위는 장치마다 다름)")
     ap.add_argument("--display", default=None,
-                    choices=["preview", "serial", "pi", "null"])
+                    choices=["preview", "serial", "pi", "null"],
+                    help="안경 화면 출력. 기본: 말풍선 창이 있으면 숨김, 없으면 preview")
     ap.add_argument("--debug", action="store_true", help="카메라 뷰도 함께 표시")
     ap.add_argument("--video-captions", action=argparse.BooleanOptionalAction, default=None,
-                    help="영상 위 말풍선 표시 (preview + 얼굴 카메라 사용 시 기본 활성화)")
+                    help="영상 위 말풍선 표시 (카메라가 있으면 기본 활성화)")
     ap.add_argument("--transcript", action="store_true",
                     help="확정된 음성의 대화 기록 창도 표시 (H로 열기/닫기)")
     ap.add_argument("--no-gate", action="store_true",
@@ -487,13 +488,15 @@ def main():
 
     hud = HudRenderer()
     content = HudContent(hud)
-    display = make_display(a.display)
+    # With a camera the captions live in speech bubbles on the video. The glasses
+    # (OLED) simulation repeats the same text in a separate window, so it opens only
+    # when asked for (--display preview) or when there is no video to draw on.
+    video_enabled = ((a.video_captions if a.video_captions is not None
+                      else not a.fixed_caption) and bool(vision or face_thread))
+    display = make_display(a.display or ("null" if video_enabled else None))
     captions = CaptionState(C.CAPTION_HOLD_SEC, C.CAPTION_PARTIAL_TIMEOUT, C.FACE_LOST_SEC)
     history = CaptionHistory(C.CAPTION_HISTORY_LIMIT)
     faces = FaceTracker(C.FACE_LOST_SEC)
-    video_enabled = ((a.video_captions if a.video_captions is not None else
-                      getattr(display, "has_window", False) and not a.fixed_caption)
-                     and bool(vision or face_thread))
     overlay = None
     if video_enabled:
         from src.video_overlay import VideoOverlay
