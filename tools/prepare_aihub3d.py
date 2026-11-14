@@ -72,6 +72,9 @@ def _prepare(root, out):
     for folder in folders:
         m = CLIP.fullmatch(folder.name)
         if not m:
+            if folder.name.startswith("NIA_SL_SEN"):
+                raise ValueError("SEN 문장 키포인트는 tools/prepare_sen.py로 변환하세요. "
+                                 "이 도구는 WORD의 실제 3D 손 좌표 전용입니다.")
             raise ValueError(f"지원하지 않는 클립 이름: {folder.name}")
         groups[m[1]].append((m[2], m[3], m[4], folder))
     if not groups:

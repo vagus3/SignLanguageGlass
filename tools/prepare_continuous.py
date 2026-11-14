@@ -29,7 +29,8 @@ LIMITATIONS = ["2D viewpoint mismatch needs wearable evaluation",
                "Interlocutor face excluded; signer expression unavailable"]
 
 
-def write_dataset(clips, out, load_clip, *, version, drop=(), extra=None):
+def write_dataset(clips, out, load_clip, *, version, drop=(), extra=None,
+                  skip_invalid=False, progress=None):
     """Validate clip metadata, convert each clip and publish the dataset atomically.
 
     load_clip(row, identity) -> (PoseSequence, extra row fields). Shared by the
@@ -43,29 +44,51 @@ def write_dataset(clips, out, load_clip, *, version, drop=(), extra=None):
     with tempfile.TemporaryDirectory(dir=out.parent, prefix="pose-stage-") as td:
         stage = Path(td) / "result"
         stage.mkdir()
-        rows, missing = [], []
+        rows, missing, rejected = [], [], []
         seen = set()
         for index, row in enumerate(clips):
             identity = row.get("id")
             if not isinstance(identity, str) or not identity or identity in seen:
                 raise ValueError("Each clip needs a unique nonempty id")
             seen.add(identity)
-            sequence, fields = load_clip(row, identity)
+            for key in ("signer_id", "session_id", "group_id"):
+                if not isinstance(row.get(key), str) or not row[key].strip():
+                    raise ValueError(f"{identity}: missing {key}")
+            glosses = row.get("glosses")
+            if glosses is not None and (not isinstance(glosses, list) or any(
+                    not isinstance(g, str) or not g.strip() or g == "<blank>" for g in glosses)):
+                raise ValueError(f"{identity}: glosses must be an ordered list of nonempty labels")
+            try:
+                sequence, fields = load_clip(row, identity)
+                minimum = (len(glosses) + sum(a == b for a, b in zip(glosses, glosses[1:]))) if glosses else 0
+                if len(sequence.timestamps) < minimum:
+                    raise ValueError("too few frames for CTC target (including repeated labels)")
+            except (ValueError, OSError) as error:
+                if not skip_invalid:
+                    raise ValueError(f"{identity}: {error}") from error
+                rejected.append({"id": identity, "reason": str(error)})
+                if progress:
+                    progress(index + 1, identity, False)
+                continue
             filename = f"clip_{index:06d}.npz"
             sequence.save(stage / filename)
-            for key in ("signer_id", "session_id", "group_id"):
-                if not row.get(key):
-                    raise ValueError(f"{identity}: missing {key}")
             rows.append({k: v for k, v in {**row, **fields, "file": filename,
                                          "frames": len(sequence.timestamps),
                                          "duration_seconds": float(sequence.timestamps[-1])}.items()
                          if k not in drop})
             if row.get("glosses") is None:
                 missing.append({"id": identity, "reason": "ordered glosses unavailable"})
+            if progress:
+                progress(index + 1, identity, True)
         if not rows:
-            raise ValueError("No clips supplied")
+            detail = f"; first error: {rejected[0]}" if rejected else ""
+            raise ValueError(f"No valid clips supplied{detail}")
         report = {"version": version, "joint_names": JOINT_NAMES, **(extra or {}), "clips": rows,
                   "excluded_from_ctc": missing, "deployment_ready": False,
+                  "excluded_from_conversion": rejected,
+                  "conversion_summary": {"selected": len(seen), "converted": len(rows),
+                                         "rejected": len(rejected),
+                                         "frames": sum(r["frames"] for r in rows)},
                   "limitations": list(LIMITATIONS)}
         (stage / "manifest.json").write_text(json.dumps(report, ensure_ascii=False, indent=2),
                                              encoding="utf-8")

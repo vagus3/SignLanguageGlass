@@ -649,6 +649,12 @@ python main.py --no-sign --display preview --no-video-captions
 
 ## 학습 데이터 두 경로
 
+SYN 문장 JSON은 `tools/prepare_sen.py`로 같은 클립의 원본 `morpheme` 라벨을 연결해
+2D CTC 입력으로 변환합니다. 현재 2048×1152·30fps 정면 자료는 498클립/61,344프레임 변환을
+확인했고, 영상 길이와 키포인트 범위가 다른 2클립은 제외했습니다.
+[COLAB_TRAINING.md](COLAB_TRAINING.md)에 변환 명령과 Colab 노트북·ZIP 사용법이 있습니다.
+WORD 3D 손 모양 변환과는 별도 경로입니다.
+
 | | 경로 A — 직접 수집 | 경로 B — AI Hub |
 |---|---|---|
 | 특징 | `landmarks.py` **246차원 wearable-v3** | `hand_shape3d.py` **462차원 3D 손 모양** |
