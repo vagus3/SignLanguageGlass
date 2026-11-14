@@ -255,11 +255,17 @@ def make_preview_hands():
 
 
 def draw_hand_preview(image, results):
-    """Draw only detected hand joints in the original, unmirrored image space."""
+    """Draw the actual Holistic input, or standalone Hands when sign is off."""
     import mediapipe as mp
 
     drawing = mp.solutions.drawing_utils
-    for hand in results.multi_hand_landmarks or []:
+    hands = getattr(results, "multi_hand_landmarks", None)
+    if hands is None:
+        hands = [getattr(results, name, None) for name in
+                 ("left_hand_landmarks", "right_hand_landmarks")]
+    for hand in hands:
+        if hand is None:
+            continue
         drawing.draw_landmarks(
             image, hand, mp.solutions.hands.HAND_CONNECTIONS,
             drawing.DrawingSpec(color=(0, 255, 255), thickness=2, circle_radius=4),

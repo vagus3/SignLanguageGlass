@@ -106,7 +106,10 @@ class VisionThread(threading.Thread):
         try:
             holistic = (L.make_holistic(C.MODEL_COMPLEXITY)
                         if self.enable_sign or self.segment_recorder is not None else None)
-            hand_detector = L.make_preview_hands() if self.preview_hands else None
+            # Recognition and its preview must use the same landmarks. A separate
+            # Hands graph is only useful when sign recognition is disabled.
+            hand_detector = (L.make_preview_hands()
+                             if self.preview_hands and holistic is None else None)
             if self.track_face:
                 import mediapipe as mp
                 face_detector = mp.solutions.face_detection.FaceDetection(
@@ -139,10 +142,11 @@ class VisionThread(threading.Thread):
                 if holistic is not None:
                     st.add("holistic", (t_hol - t_cap) * 1000)
 
-                # 손 미리보기는 Holistic과 별도로 처리합니다.
-                hand_res = hand_detector.process(rgb) if hand_detector is not None else None
-                if hand_res is not None:
+                t_preview = clock.now()
+                hand_res = hand_detector.process(rgb) if hand_detector is not None else res
+                if self.preview_hands and hand_res is not None:
                     L.draw_hand_preview(frame, hand_res)
+                    st.add("hand_preview", (clock.now() - t_preview) * 1000)
 
                 t_face = clock.now()
                 face_boxes = (L.detection_face_boxes_px(face_detector.process(rgb), w, h)
@@ -196,7 +200,10 @@ class VisionThread(threading.Thread):
                 self._emit(("frame", {
                     "frame": frame, "face": face,
                     "face_boxes": face_boxes, "captured_at": t_cap,
-                    "hand_count": len(getattr(hand_res, "multi_hand_landmarks", None) or []),
+                    "hand_count": (len(getattr(hand_res, "multi_hand_landmarks", None) or [])
+                                   if hand_detector is not None else
+                                   sum(bool(getattr(res, name, None)) for name in
+                                       ("left_hand_landmarks", "right_hand_landmarks"))),
                     "sign_hand_count": sum(bool(getattr(res, name, None)) for name in
                                            ("left_hand_landmarks", "right_hand_landmarks")),
                     "size": (w, h), "fps": self.fps,
@@ -599,12 +606,11 @@ def main():
                         v = cv2.resize(v, (C.DEBUG_PREVIEW_W, int(v.shape[0] * scale)),
                                        interpolation=cv2.INTER_AREA)
                     v = cv2.flip(v, 1) if C.MIRROR_PREVIEW else v.copy()
-                    txt = (f"{payload['fps']:.0f}fps  "
-                           f"win {payload['in_fps']:.0f}fps  "
-                           f"vis {payload['ms_vision']:.0f}ms  "
-                           f"inf {payload['ms_infer']:.0f}ms  "
-                           f"{payload['raw']} {payload['conf']:.2f}  "
+                    txt = (f"{payload['fps']:.0f}fps  vis {payload['ms_vision']:.0f}ms  "
                            f"Hands: {payload['hand_count']}/2")
+                    if recorder is None:
+                        txt += (f"  inf {payload['ms_infer']:.0f}ms  "
+                                f"{payload['raw']} {payload['conf']:.2f}")
                     cv2.putText(v, txt, (16, 36), cv2.FONT_HERSHEY_SIMPLEX,
                                 0.7, (0, 255, 0), 2)
                     if not gate.is_open():

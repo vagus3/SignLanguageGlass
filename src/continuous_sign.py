@@ -138,6 +138,10 @@ def collate(rows, vocabulary, feature_set="2d", cache=None):
     ids = {label: i for i, label in enumerate(vocabulary)}
     targets, target_lengths = [], []
     for i, (row, array) in enumerate(zip(rows, arrays)):
+        minimum = len(row["glosses"]) + sum(a == b for a, b in
+                                            zip(row["glosses"], row["glosses"][1:]))
+        if len(array) < minimum:
+            raise ValueError(f"{row['id']}: too few frames after feature preprocessing for CTC target")
         x[i, :len(array)] = torch.from_numpy(array)
         targets.extend(ids[g] for g in row["glosses"])
         target_lengths.append(len(row["glosses"]))

@@ -327,6 +327,7 @@ for _name, _columns in WORLD_BLOCKS.items():
 _2D = ["hand_shape", "position", "mask", "velocity", "timing"]
 FEATURE_PRESETS = {
     "2d": _2D, "3d": _2D + list(WORLD_BLOCKS),
+    "mediapipe_body_v1": _2D,
     "2d_no_hand_shape": [b for b in _2D if b != "hand_shape"],
     "2d_no_position": [b for b in _2D if b != "position"],
     "2d_no_velocity": [b for b in _2D if b != "velocity"],
@@ -345,3 +346,6 @@ def _selector(blocks):
 
 
 FEATURE_SETS = {name: _selector(blocks) for name, blocks in FEATURE_PRESETS.items()}
+# A new identifier prevents silently changing the meaning of old 331-D weights.
+from src.mediapipe_features import features as _mediapipe_features
+FEATURE_SETS["mediapipe_body_v1"] = (_mediapipe_features, FEATURE_DIM)

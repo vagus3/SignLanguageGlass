@@ -39,6 +39,9 @@ CLI 기본값은 아직 `local`이며, 클라우드 경로는 옵션으로 선�
 실행·자동 발화 검증은 [CLOUD_SETUP.md](CLOUD_SETUP.md)를 참고하세요. 실제 연속 수어 데이터와
 모델이 아직 없어 번역 성능은 검증되지 않았습니다.
 
+MediaPipe 기준 단어 재학습과 관절 추적 개선은 [MEDIAPIPE_IMPROVEMENTS.md](MEDIAPIPE_IMPROVEMENTS.md)를 참고하세요.
+선택 가능한 새 CTC 특징 `mediapipe_body_v1`은 MediaPipe로 추출한 자료 또는 직접 수집한 좌표에 사용합니다. 기존 JSON의 기본 학습 특징은 `2d`로 유지합니다.
+
 ---
 
 ## 지금 상태 (정직하게)

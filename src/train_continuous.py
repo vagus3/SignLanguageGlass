@@ -1,4 +1,4 @@
-"""Train CTC only on annotated continuous clips; keep held-out test untouched."""
+"""Train MediaPipe word or continuous CTC; keep held-out test untouched."""
 import argparse
 import json
 from pathlib import Path
@@ -8,6 +8,7 @@ from src.continuous_sign import (CtcRecognizer, collate, load_dataset,
                                   split_dataset, save_checkpoint, greedy_decode, edit_distance)
 from src.data_sources import attribution, manifest_sources
 from src.pose_sequence import FEATURE_SETS, VERSION_3D, needs_world
+from src.mediapipe_features import FEATURE_SET, FPS, PIPELINE, require_mediapipe
 
 # Features are computed once per clip and reused every epoch while they fit here.
 FEATURE_CACHE_BYTES = 2 * 1024 ** 3
@@ -16,6 +17,10 @@ FEATURE_CACHE_BYTES = 2 * 1024 ** 3
 def feature_cache(rows, feature_set, limit=FEATURE_CACHE_BYTES):
     """An empty cache dict, or None when caching every clip would exceed the limit."""
     frames = sum(len(r["sequence"].timestamps) for r in rows)
+    if feature_set == FEATURE_SET:
+        frames = sum(max(2, int(np.floor((r["sequence"].timestamps[-1]
+                                         - r["sequence"].timestamps[0]) * FPS + 1e-7)) + 1)
+                     for r in rows)
     needed = frames * FEATURE_SETS[feature_set][1] * 4
     if needed > limit:
         print(f"feature cache off: {needed / 1024 ** 3:.1f} GiB > {limit / 1024 ** 3:.1f} GiB")
@@ -77,15 +82,25 @@ def dataset_sources(manifest, warn=True):
     return sources
 
 
-def prepare_training(manifest, seed=0, feature_sets=("2d",)):
+def prepare_training(manifest, seed=0, feature_sets=("2d",), task="continuous"):
     """Rows, splits and vocabulary shared by every configuration trained on a manifest."""
+    if FEATURE_SET in feature_sets:
+        require_mediapipe(json.loads(Path(manifest).read_text(encoding="utf-8")))
     rows, skipped = load_dataset(manifest)
+    if task not in ("words", "continuous"):
+        raise ValueError(f"Unknown training task: {task}")
+    if task == "words" and any(len(r["glosses"]) > 1 for r in rows):
+        raise ValueError("Word training requires one gloss per positive clip (or an empty negative)")
+    if FEATURE_SET in feature_sets:
+        for row in rows:
+            if row["glosses"] and not row["sequence"].mask[:, :42].any():
+                raise ValueError(f"{row['id']}: labelled clip has no detected hands")
     for name in feature_sets:
         if needs_world(name) and rows[0]["sequence"].version != VERSION_3D:
             raise ValueError(f"--features {name} needs world coordinates; "
                              "prepare data with 3D keypoints")
     splits = split_dataset(rows, seed)
-    if any(not r.get("continuous", False) for r in splits["train"]):
+    if task == "continuous" and any(not r.get("continuous", False) for r in splits["train"]):
         raise ValueError("Continuous training requires continuous=true annotations; "
                          "isolated words are not sentences")
     labels = ["<blank>"] + sorted({g for r in splits["train"] for g in r["glosses"]})
@@ -98,7 +113,7 @@ def prepare_training(manifest, seed=0, feature_sets=("2d",)):
 
 
 def train_one(splits, labels, feature_set, out, *, epochs=30, batch=8, seed=0, device="cpu",
-              skipped=(), data_sources=()):
+              skipped=(), data_sources=(), extractor=None, task="continuous"):
     torch.manual_seed(seed)
     model = CtcRecognizer(len(labels), feature_set=feature_set)
     history = fit(model, splits["train"], labels, epochs=epochs, batch=batch, seed=seed,
@@ -108,11 +123,15 @@ def train_one(splits, labels, feature_set, out, *, epochs=30, batch=8, seed=0, d
               "history": history,
               "splits": {s: [r["id"] for r in clips] for s, clips in splits.items()},
               "auto_speech_enabled": False, "test_evaluated": False}
+    pipeline = dict(PIPELINE) if feature_set == FEATURE_SET else None
+    report.update(preprocessing=pipeline, extractor=extractor, task=task)
     out = Path(out)
     out.mkdir(parents=True)
     save_checkpoint(out / "ctc.pt", model.cpu(), labels,
                     metadata={"splits": report["splits"], "split_seed": seed,
-                              "continuous": True, "data_sources": list(data_sources)})
+                              "continuous": task == "continuous", "data_sources": list(data_sources),
+                              "task": task, "synthetic_sentences": False,
+                              "preprocessing": pipeline, "extractor": extractor})
     (out / "training.json").write_text(json.dumps(report, ensure_ascii=False, indent=2),
                                       encoding="utf-8")
     return report
@@ -126,8 +145,11 @@ def main():
     p.add_argument("--batch", type=int, default=8)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    p.add_argument("--task", choices=["words", "continuous"], default="continuous",
+                   help="words: train real isolated clips without synthetic sentence concatenation")
     p.add_argument("--features", choices=sorted(FEATURE_SETS), default="2d",
-                   help="3d* needs a pose3d-sequence-v2 manifest")
+                   help="mediapipe_body_v1: MediaPipe + 30fps + shoulder normalization; "
+                        "3d* needs a pose3d-sequence-v2 manifest")
     args = p.parse_args()
     if args.epochs < 1 or args.batch < 1:
         p.error("epochs and batch must be positive")
@@ -135,12 +157,14 @@ def main():
     if out.exists():
         p.error("Output exists; choose a new directory")
     try:
-        skipped, splits, labels = prepare_training(args.manifest, args.seed, [args.features])
+        skipped, splits, labels = prepare_training(args.manifest, args.seed, [args.features], args.task)
     except ValueError as error:
         p.error(str(error))
     sources = dataset_sources(args.manifest)
     train_one(splits, labels, args.features, out, epochs=args.epochs, batch=args.batch,
-              seed=args.seed, device=args.device, skipped=skipped, data_sources=sources)
+              seed=args.seed, device=args.device, skipped=skipped, data_sources=sources,
+              extractor=json.loads(Path(args.manifest).read_text(encoding="utf-8")).get("extractor"),
+              task=args.task)
     for line in attribution(sources):
         print("데이터 출처:", line)
     print(f"Saved {out}/ctc.pt; automatic speech remains disabled until calibration")

@@ -8,10 +8,12 @@ import numpy as np
 
 try:
     import cv2
-    import torch  # noqa: F401  (load_dataset)
 except ImportError:
     sys.exit(77)
-from src.continuous_sign import load_dataset
+try:
+    from src.continuous_sign import load_dataset
+except ImportError:
+    load_dataset = None  # Video extraction itself must work in the torch-free runtime.
 from src.pose_sequence import PoseSequence, VERSION, VERSION_3D
 from tools.extract_mediapipe import prepare
 
@@ -57,8 +59,9 @@ def main():
         a = PoseSequence.load(td / "mp" / rows["a"]["file"])
         assert a.coordinates.shape == (8, 49, 2) and a.image_size == (128, 72)
         assert np.allclose(a.timestamps, np.arange(8) / 15)
-        trainable, skipped = load_dataset(td / "mp" / "manifest.json")
-        assert [r["id"] for r in trainable] == ["a"] and len(skipped) == 1
+        if load_dataset is not None:
+            trainable, skipped = load_dataset(td / "mp" / "manifest.json")
+            assert [r["id"] for r in trainable] == ["a"] and len(skipped) == 1
 
         three_d = prepare(annotations, td / "mp3d", width=128, with_world=True, workers=2)
         assert three_d["version"] == VERSION_3D

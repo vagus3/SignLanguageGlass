@@ -15,6 +15,7 @@ Not learned; thresholds need checking on recordings from the same camera.
 """
 import numpy as np
 from src.pose_sequence import MAX_SECONDS
+from src.mediapipe_features import PoseSmoother, MAX_GAP
 
 VIEWPOINTS = ("webcam", "glasses")
 PALM_PER_SHOULDER = 0.25  # wrist-to-middle-knuckle length / shoulder width, adults
@@ -24,7 +25,7 @@ class ActivitySegmenter:
     def __init__(self, *, viewpoint="webcam", rest_ratio=1.0, start_speed=1.5,
                  still_speed=0.4, start_hold=0.3, end_hold=0.8,
                  still_hold=1.5, min_seconds=0.5, max_seconds=MAX_SECONDS - 1.0,
-                 pending_timeout=1.0, smoothing=0.3):
+                 pending_timeout=1.0, smoothing=0.3, start_pause=0.08):
         if viewpoint not in VIEWPOINTS:
             raise ValueError(f"viewpoint must be one of {VIEWPOINTS}")
         self.viewpoint, self.rest_ratio = viewpoint, rest_ratio
@@ -33,11 +34,14 @@ class ActivitySegmenter:
         self.start_hold, self.end_hold, self.still_hold = start_hold, end_hold, still_hold
         self.min_seconds, self.max_seconds = min_seconds, max_seconds
         self.pending_timeout, self.smoothing = pending_timeout, smoothing
+        self.start_pause, self.last_moving = start_pause, None
         self.previous, self.speed = None, 0.0
         self.owned, self.pending, self.started = False, None, 0.0
         self.moving_since = self.idle_since = self.still_since = None
+        self.pose_smoother = PoseSmoother()
 
     def _motion(self, points, mask, t, image_size):
+        points, mask = self.pose_smoother.update(points, mask, t, image_size or (1, 1))
         p = np.asarray(points, np.float64).copy()
         aspect = image_size[1] / image_size[0] if image_size is not None else 1.0
         p[:, 1] *= aspect
@@ -61,7 +65,9 @@ class ActivitySegmenter:
         if self.previous is not None:
             before, old_wrists, old_valid, old_local, old_joint_valid = self.previous
             dt, both = t - before, valid & old_valid
-            if 0 < dt <= 0.25 and both.any():
+            if dt <= 0 or dt > MAX_GAP:
+                self.speed, self.moving_since, self.last_moving = 0.0, None, None
+            if 0 < dt <= MAX_GAP and both.any():
                 raw = float(np.max(np.linalg.norm(wrists - old_wrists, axis=1)[both]
                                    / palms[both]) / dt)
                 for hand in np.flatnonzero(both):
@@ -80,6 +86,7 @@ class ActivitySegmenter:
     def _emit(self, event, t):
         self.pending = (event, t)
         self.moving_since = self.idle_since = self.still_since = None
+        self.last_moving = None
         return event
 
     def update(self, points, mask, t, recording, image_size=None):
@@ -102,10 +109,15 @@ class ActivitySegmenter:
         if not self.owned:
             if present and speed >= self.start_speed:
                 self.moving_since = t if self.moving_since is None else self.moving_since
+                self.last_moving = t
                 if t - self.moving_since >= self.start_hold:
                     return self._emit("start", t)
-            else:
+            elif (not present or self.last_moving is None
+                  or t - self.last_moving > self.start_pause):
+                # Fast back-and-forth signing briefly passes through zero speed.
+                # Keep a candidate through that turn, but never through a lost hand.
                 self.moving_since = None
+                self.last_moving = None
             return None
         if t - self.started >= self.max_seconds:
             return self._emit("stop", t)

@@ -13,6 +13,7 @@ from src.data_sources import source_entry
 from src.pose_sequence import (VERSION, VERSION_3D, JOINT_NAMES, from_mediapipe,
                                world_from_mediapipe)
 from src.cloud_sign import SegmentRecorder
+from src.mediapipe_features import require_mediapipe
 
 
 def main():
@@ -36,12 +37,25 @@ def main():
                 else {"version": version, "joint_names": JOINT_NAMES, "clips": []})
     if manifest["version"] != version:
         p.error("Existing dataset uses a different pose contract")
+    if manifest["clips"]:
+        try:
+            require_mediapipe(manifest)
+        except ValueError as error:
+            p.error(f"Use a new --out for MediaPipe recordings: {error}")
+    import mediapipe as mp
+    manifest.setdefault("extractor", {"name": "mediapipe-holistic", "mediapipe": mp.__version__,
+                                      "model_complexity": C.MODEL_COMPLEXITY,
+                                      "fresh_tracker_per_clip": False})
+    previous_extractor = manifest["extractor"]
+    if (previous_extractor.get("mediapipe") != mp.__version__
+            or previous_extractor.get("model_complexity") != C.MODEL_COMPLEXITY):
+        p.error("MediaPipe version/model complexity changed; use a new --out")
     # Recorded here, so trained models can say where their data came from.
     if not any(s.get("id") == "team" for s in manifest.setdefault("sources", [])):
         manifest["sources"].append(source_entry("team"))
     import cv2
     from src.camera import CameraReader
-    from src.landmarks import make_holistic
+    from src.landmarks import make_holistic, draw_hand_preview
     cap = CameraReader(camera_index=args.camera)
     if not cap.ok():
         raise SystemExit("Cannot open camera")
@@ -60,9 +74,12 @@ def main():
             points, mask = from_mediapipe(res)
             world = world_from_mediapipe(res, (w, h)) if args.with_3d else (None, None)
             recorder.add(points, mask, captured, (w, h), *world)
+            draw_hand_preview(frame, res)
             status = "REC" if recorder.active else ("CANCELLED: " + recorder.error
                                                       if recorder.error else "READY")
-            cv2.putText(frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX,
+            hands = sum(bool(getattr(res, name, None)) for name in
+                        ("left_hand_landmarks", "right_hand_landmarks"))
+            cv2.putText(frame, f"{status}  Hands: {hands}/2", (20, 40), cv2.FONT_HERSHEY_SIMPLEX,
                         0.8, (0, 255, 255), 2)
             cv2.imshow("continuous pose collector", frame)
             key = cv2.waitKey(1) & 0xff

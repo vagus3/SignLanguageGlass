@@ -66,4 +66,23 @@ assert kind == "frame" and payload["hand_count"] == 1
 assert payload["frame"][96, 64].any(), "Hands must display even when Holistic finds none"
 make_holistic.assert_not_called()  # --no-sign uses only the independent hand preview.
 assert camera.closed and not holistic.closed and detector.closed
+
+# A sign capture previews the exact Holistic hands; no second detector is started.
+from src.cloud_sign import SegmentRecorder
+out = queue.Queue()
+worker = main.VisionThread(out, enable_sign=False, track_face=False, preview_hands=True,
+                           segment_recorder=SegmentRecorder())
+result = NS(left_hand_landmarks=hand, right_hand_landmarks=None,
+            pose_landmarks=None, face_landmarks=None)
+camera, holistic = Camera(), Detector(result)
+with patch("src.camera.CameraReader", return_value=camera), \
+        patch.object(L, "make_holistic", return_value=holistic), \
+        patch.object(L, "make_preview_hands") as make_preview:
+    worker.run()
+kind, payload = out.get_nowait()
+assert kind == "frame", payload
+assert payload["hand_count"] == payload["sign_hand_count"] == 1
+assert payload["frame"][96, 64].any()
+make_preview.assert_not_called()
+assert camera.closed and holistic.closed
 print("[OK] hand-only preview, coordinates, mirroring, independent detection and cleanup")
