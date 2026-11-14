@@ -329,6 +329,7 @@ src/
   collect_continuous.py 문장 단위 연속 수어 좌표 수집기
   train.py             Step 1-2 LSTM 단어 모델 학습
   train_continuous.py  CTC 연속 수어 모델 학습 스크립트
+  train_words.py       낱개 단어 클립을 이어 붙인 합성 문장으로 같은 모델을 학습 (AI Hub 단어용)
   face_tracker.py    ★ 다중 얼굴 검출, 1:1 공간 ID 추적 및 화자 선택
   caption_state.py   ★ 자막 수명 주기(홀드/만료/얼굴 연결) 상태 머신
   caption_history.py   최근 200개 확정 대화 기록 메모리 보관
@@ -348,6 +349,7 @@ tools/
   merge_parts.py       AI Hub 분할압축 병합
   check_mount.py       실제 장착 시점 손/얼굴 검출률과 FPS 측정
   prepare_aihub3d.py   3D 손 데이터 변환·중복 제거·원본 동작 그룹 감사
+  prepare_aihub_words.py  AI Hub 단어 묶음(zip)에서 고른 단어만 꺼내 좌표 데이터셋으로 변환
   verify_assets.py     모델/폰트/TTS 및 합성음성→STT 무결성 검사
   prepare_continuous.py  OpenPose JSON → 문장 좌표 데이터셋
   extract_mediapipe.py   원본 영상 → 실행 시와 같은 MediaPipe 좌표 데이터셋
