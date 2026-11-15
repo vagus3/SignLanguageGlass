@@ -29,6 +29,39 @@ def observe(timeline, i, a, b, **kwargs):
 
 
 class SpeakerTests(unittest.TestCase):
+    def test_intermittent_mouth_motion_acquires_and_holds_one_face(self):
+        timeline = SpeakerTimeline()
+        for i in range(90):
+            t = 10 + i / 30
+            phase = i % 9
+            opening = .02 + (.01 * (phase % 2) if phase < 5 else 0)
+            timeline.observe([FaceTrack(1, BOXES[0], t)], {1: opening}, t)
+        self.assertEqual(timeline._at(t, settled=False), 1)
+        for j in range(1, 13):
+            now = t + j / 30
+            timeline.observe([FaceTrack(1, BOXES[0], now)], {1: .02}, now)
+        self.assertEqual(timeline._at(now, settled=False), 1)
+        timeline.observe([FaceTrack(1, BOXES[0], now + 1)], {1: .02}, now + 1)
+        self.assertEqual(timeline.focus(now + 1), 1)
+        # A visible but silent face remains selected beyond the old timeout.
+        for j in range(1, 61):
+            at = now + 1 + j / 30
+            timeline.observe([FaceTrack(1, BOXES[0], at)], {1: .02}, at)
+        self.assertEqual(timeline.focus(at), 1)
+        timeline.observe([], {}, at + .05)
+        self.assertIsNone(timeline.focus(at + .05))
+        # Returning faces receive new IDs and must qualify again.
+        timeline.observe([FaceTrack(3, BOXES[0], at + .1)], {3: .02}, at + .1)
+        self.assertIsNone(timeline.focus(at + .1))
+
+    def test_single_open_close_is_not_repeated_speech(self):
+        timeline = SpeakerTimeline()
+        for i in range(30):
+            t = 10 + i / 30
+            timeline.observe([FaceTrack(1, BOXES[0], t)],
+                             {1: .15 if 5 <= i <= 8 else .02}, t)
+        self.assertIsNone(timeline.resolve(10.25))
+
     def test_alternating_speakers_are_bound_by_capture_time(self):
         timeline = SpeakerTimeline()
         for i in range(21):
@@ -197,6 +230,95 @@ class SpeakerTests(unittest.TestCase):
         self.assertIsNone(book.update(make("partial", 2, 1), a), "Ownership cannot change")
         book.update(make("partial", 3, 2), b)
         self.assertIsNone(book.update(make("final", 1, 1), a), "An evicted ID cannot reappear")
+
+
+class ContinuityTests(unittest.TestCase):
+    """Brief detection misses, movement, entries, exits and overlap (PR3 plan table)."""
+
+    def speak(self, timeline, tracker, i, boxes, mouths):
+        t = 10 + i * .05
+        tracker.update(boxes, (640, 480), t, mouths)
+        timeline.observe(tracker.tracks(t), tracker.mouths, t)
+        return t
+
+    def test_brief_miss_keeps_id_selection_and_audio_owner(self):
+        logs = []
+        tracker, timeline = FaceTracker(log=logs.append), SpeakerTimeline(log=logs.append)
+        for i in range(12):
+            self.speak(timeline, tracker, i, BOXES[:1], [.02 if i % 2 else .06])
+        self.assertEqual(timeline.resolve(10.4), 1)
+        for i in (12, 13):                      # two frames without a detection
+            self.speak(timeline, tracker, i, [], [])
+        for i in range(14, 20):
+            self.speak(timeline, tracker, i, BOXES[:1], [.02 if i % 2 else .06])
+        self.assertEqual(timeline.resolve(10.62), 1, "audio during the miss stays with A")
+        self.assertEqual([t.track_id for t in tracker.tracks(11)], [1])
+        self.assertEqual(timeline.resolve(10.78), 1)
+        self.assertTrue(any("잠시 놓침" in line for line in logs))
+        self.assertTrue(any("다시 잡힘" in line for line in logs))
+
+    def test_gap_difference_is_not_speech(self):
+        timeline = SpeakerTimeline()
+        tracker = FaceTracker()
+        for i in range(6):
+            self.speak(timeline, tracker, i, BOXES[:1], [.02])
+        self.speak(timeline, tracker, 6, [], [])
+        self.speak(timeline, tracker, 9, BOXES[:1], [.09])   # mouth changed during the gap
+        self.speak(timeline, tracker, 10, BOXES[:1], [.09])
+        self.assertIsNone(timeline.resolve(10.5))
+
+    def test_moving_face_keeps_id_but_far_jump_does_not(self):
+        tracker = FaceTracker()
+        tracker.update([(100, 100, 200, 200)], (640, 480), 10)
+        moved = tracker.update([(160, 110, 260, 210)], (640, 480), 10.05)  # little overlap
+        self.assertEqual(moved.track_id, 1)
+        tracker.update([(500, 100, 600, 200)], (640, 480), 10.1)
+        far = [t for t in tracker.tracks(10.1) if t.seen_at == 10.1]
+        self.assertEqual(len(far), 1)
+        self.assertNotEqual(far[0].track_id, 1, "a jump across the image is another face")
+
+    def test_entry_keeps_speaker_and_new_speaker_needs_confirmation(self):
+        tracker, timeline = FaceTracker(), SpeakerTimeline()
+        for i in range(12):
+            self.speak(timeline, tracker, i, BOXES[:1], [.02 if i % 2 else .06])
+        for i in range(12, 16):                 # B enters silently
+            self.speak(timeline, tracker, i, BOXES, [.02 if i % 2 else .06, .02])
+        self.assertEqual({t.track_id for t in tracker.tracks(10.8)}, {1, 2})
+        for i in range(16, 40):                 # A stops, B speaks
+            self.speak(timeline, tracker, i, BOXES, [.02, .02 if i % 2 else .06])
+        self.assertEqual(timeline.resolve(10.75), 1, "B entering did not take A's turn")
+        self.assertEqual(timeline.resolve(11.6), 2)
+
+    def test_exit_then_new_person_gets_new_id_and_no_caption_inheritance(self):
+        tracker, timeline = FaceTracker(), SpeakerTimeline()
+        book = CaptionBook()
+        for i in range(12):
+            t = self.speak(timeline, tracker, i, BOXES[:1], [.02 if i % 2 else .06])
+        book.update(CaptionEvent("final", "A의 말", 1, t, speaker_id=1, speaker_resolved=True),
+                    tracker.current(t))
+        for i in range(12, 24):                 # A gone for 0.6 s > lost_sec
+            self.speak(timeline, tracker, i, [], [])
+        t = self.speak(timeline, tracker, 24, BOXES[:1], [.02])
+        self.assertNotEqual(tracker.current(t).track_id, 1)
+        state = book.states[1]
+        self.assertEqual(state.track_id, 1)
+        anchor = state.anchor(tracker.current(t), t)
+        self.assertTrue(anchor is None or anchor.track_id == 1,
+                        "A's caption never moves to the newcomer")
+
+    def test_overlap_is_uncertain_but_current_speaker_is_remembered(self):
+        tracker, timeline = FaceTracker(), SpeakerTimeline()
+        for i in range(14):
+            self.speak(timeline, tracker, i, BOXES, [.02 if i % 2 else .06, .02])
+        for i in range(14, 24):
+            v = .02 if i % 2 else .06
+            self.speak(timeline, tracker, i, BOXES, [v, v])
+        self.assertIsNone(timeline.resolve(11.0), "overlapping speech is uncertain")
+        self.speak(timeline, tracker, 24, BOXES, [.06, .02])
+        self.speak(timeline, tracker, 25, BOXES, [.02, .02])
+        self.speak(timeline, tracker, 26, BOXES, [.06, .02])
+        self.speak(timeline, tracker, 27, BOXES, [.02, .02])
+        self.assertEqual(timeline._active, 1, "A resumes without a fresh confirmation")
 
 
 if __name__ == "__main__":

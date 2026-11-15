@@ -460,8 +460,9 @@ def main():
         from src.active_speaker import SpeakerTimeline
         speakers = SpeakerTimeline(C.SPEAKER_CONFIRM_SEC, C.SPEAKER_HOLD_SEC,
                                    C.SPEAKER_MOTION_THRESHOLD, C.SPEAKER_DOMINANCE,
-                                   max_age=C.FACE_LOST_SEC)
-        print("[화자] 입 움직임·음성 시간 기반 자동 전환. 클릭=수동 잠금, 우클릭=자동")
+                                   max_age=C.FACE_LOST_SEC,
+                                   log=print if a.debug else None)
+        print(f"[화자] 입 움직임·음성 시간 기반 자동 전환. 확정 대기 {C.SPEAKER_CONFIRM_SEC:.2f}초, 자동 선택")
     caption_book = (CaptionBook(C.CAPTION_HOLD_SEC, C.CAPTION_PARTIAL_TIMEOUT, C.FACE_LOST_SEC)
                     if speakers is not None else None)
 
@@ -557,7 +558,7 @@ def main():
     display = make_display(a.display or ("null" if video_enabled else None))
     captions = CaptionState(C.CAPTION_HOLD_SEC, C.CAPTION_PARTIAL_TIMEOUT, C.FACE_LOST_SEC)
     history = CaptionHistory(C.CAPTION_HISTORY_LIMIT)
-    faces = FaceTracker(C.FACE_LOST_SEC)
+    faces = FaceTracker(C.FACE_LOST_SEC, log=print if a.debug else None)
     overlay = None
     if video_enabled:
         from src.video_overlay import VideoOverlay
@@ -592,10 +593,6 @@ def main():
     has_window = bool(video_enabled or transcript_open or (a.debug and (vision or face_thread))
                       or getattr(display, "has_window", False))
 
-    def video_mouse(event, x, y, flags, param):
-        if event in (cv2.EVENT_LBUTTONDOWN, cv2.EVENT_RBUTTONDOWN):
-            mouse_actions.put(("select" if event == cv2.EVENT_LBUTTONDOWN else "auto", x, y))
-
     def transcript_mouse(event, x, y, flags, param):
         if event == cv2.EVENT_MOUSEWHEEL:
             # OpenCV exposes the signed wheel delta in the upper 16 bits.
@@ -623,7 +620,6 @@ def main():
     try:
         if overlay is not None:
             cv2.namedWindow(video_window, cv2.WINDOW_AUTOSIZE)
-            cv2.setMouseCallback(video_window, video_mouse)
         while True:
             # 확정 결과는 영상 프레임 드롭과 무관하게 한 번씩 처리합니다.
             while not word_events.empty():
@@ -722,24 +718,7 @@ def main():
                     if transcript is not None:
                         transcript.scroll(x)
                     continue
-                now = clock.now()
-                if action == "auto":
-                    faces.automatic(now)
-                    if speakers is not None:
-                        speakers.select(None, now, manual=False)
-                    else:
-                        captions.release_anchor()
-                elif now - camera_frame_at <= C.FACE_LOST_SEC and not a.fixed_caption:
-                    if C.MIRROR_PREVIEW and not separate_face:
-                        x = last_size[0] - 1 - x
-                    if faces.select_at(x, y, now):
-                        if speakers is not None:
-                            speakers.select(faces.current(now), now, manual=True)
-                        else:
-                            captions.release_anchor()
-                        print(f"[caption] 대상 {faces.selected_id} 선택: 다음 발화부터 적용")
-
-            if speakers is not None and not faces.manual:
+            if speakers is not None:
                 faces.selected_id = speakers.focus(clock.now())
 
             # 조합 대기가 끝난 단어를 흘려보냅니다 (이중 발화 방지의 나머지 절반)

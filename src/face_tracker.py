@@ -2,7 +2,14 @@
 
 Track IDs are temporary spatial associations, not biometric identities or
 active-speaker recognition. Ambiguous matches deliberately lose the anchor.
+
+A face missing from a few detections keeps its ID for lost_sec ("briefly lost"); a
+face found again within that time rejoins it. Matching uses box overlap, centre
+distance (in face widths, growing with the time since last seen) and size change, and
+is one-to-one. When two pairings are nearly as good, neither is trusted: a new ID is
+safer than handing one person's conversation to another.
 """
+import math
 from dataclasses import dataclass
 from collections import deque
 
@@ -21,6 +28,24 @@ class FaceTrack:
         return ((x1 + x2) / 2, (y1 + y2) / 2)
 
 
+def _cost(previous, box, dt, lost_sec):
+    """Lower is better; None when the box cannot be the same face."""
+    pw = max(previous[2] - previous[0], 1.0)
+    width = max(box[2] - box[0], 1.0)
+    size = abs(math.log(width / pw))
+    pc = ((previous[0] + previous[2]) / 2, (previous[1] + previous[3]) / 2)
+    bc = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+    distance = math.hypot(bc[0] - pc[0], bc[1] - pc[1]) / pw
+    overlap = _overlap(previous, box)
+    reach = 0.6 + 2.0 * min(max(dt, 0.0), lost_sec)      # face widths
+    if overlap < 0.25 and (distance > reach or size > math.log(1.5)):
+        return None
+    return distance + size - overlap
+
+
+AMBIGUOUS_MARGIN = 0.3     # a second pairing this close to the best one is not trusted
+
+
 def _overlap(a, b):
     x1, y1 = max(a[0], b[0]), max(a[1], b[1])
     x2, y2 = min(a[2], b[2]), min(a[3], b[3])
@@ -30,8 +55,9 @@ def _overlap(a, b):
 
 
 class FaceTracker:
-    def __init__(self, lost_sec=0.45):
+    def __init__(self, lost_sec=0.45, log=None):
         self.lost_sec = lost_sec
+        self.log = log            # optional callable(str): ID created / rejoined / ended
         self.serial = 0
         self.size = None
         self._tracks = {}
@@ -58,9 +84,14 @@ class FaceTracker:
         self._raw.pop(track_id, None)
         self._filters.pop(track_id, None)
 
+    def _note(self, now, message):
+        if self.log is not None:
+            self.log(f"[얼굴 {now:.2f}] {message}")
+
     def tracks(self, now):
         for track_id, track in list(self._tracks.items()):
             if now - track.seen_at > self.lost_sec:
+                self._note(now, f"ID {track_id} 이탈 확정 ({self.lost_sec:.2f}초 동안 안 보임)")
                 self._remove(track_id)
         return list(self._tracks.values())
 
@@ -109,22 +140,56 @@ class FaceTracker:
         if not boxes:
             self._remember(now)
             return self.current(now)
-        candidates = [[t.track_id for t in previous
+        pairs = {}       # (box index, track ID) -> cost
+        for index, box in enumerate(boxes):
+            for track in previous:
+                cost = _cost(self._raw[track.track_id], box, now - track.seen_at, self.lost_sec)
+                if cost is not None:
+                    pairs[index, track.track_id] = cost
+        ambiguous_boxes, ambiguous_tracks = set(), set()
+        for index in range(len(boxes)):
+            costs = sorted(c for (i, _), c in pairs.items() if i == index)
+            if len(costs) > 1 and costs[1] - costs[0] < AMBIGUOUS_MARGIN:
+                ambiguous_boxes.add(index)
+        for track in previous:
+            costs = sorted(c for (_, t), c in pairs.items() if t == track.track_id)
+            if len(costs) > 1 and costs[1] - costs[0] < AMBIGUOUS_MARGIN:
+                ambiguous_tracks.add(track.track_id)
+        # Overlapping split/merge (two boxes on one face, or one box over two faces): the
+        # original conservative rule, kept regardless of costs.
+        overlapping = [(i, t.track_id) for i, box in enumerate(boxes) for t in previous
                        if _overlap(self._raw[t.track_id], box) >= 0.25]
-                      for box in boxes]
-        counts = {t.track_id: sum(t.track_id in ids for ids in candidates)
-                  for t in previous}
-        ambiguous = {track_id for ids in candidates for track_id in ids
-                     if len(ids) != 1 or counts[track_id] != 1}
-        for track_id in ambiguous:
+        for i, track_id in overlapping:
+            if sum(j == i for j, _ in overlapping) > 1:
+                ambiguous_boxes.add(i)
+            if sum(t == track_id for _, t in overlapping) > 1:
+                ambiguous_tracks.add(track_id)
+                ambiguous_boxes.update(j for j, t in overlapping if t == track_id)
+        ambiguous_tracks |= {t for (i, t) in pairs if i in ambiguous_boxes}
+        for track_id in ambiguous_tracks:
+            self._note(now, f"ID {track_id} 대응이 애매해 연결을 끊음")
             self._remove(track_id)
+        assigned, used = {}, set()
+        for (index, track_id), _ in sorted(pairs.items(), key=lambda kv: kv[1]):
+            if (index in assigned or track_id in used or index in ambiguous_boxes
+                    or track_id in ambiguous_tracks):
+                continue
+            assigned[index] = track_id
+            used.add(track_id)
+        seen_before = {t.track_id: t.seen_at for t in previous}
+        candidates = [[assigned[i]] if i in assigned else [] for i in range(len(boxes))]
+        ambiguous = set()
         for index, (box, ids) in enumerate(zip(boxes, candidates)):
             if len(ids) == 1 and ids[0] not in ambiguous:
                 track_id = ids[0]
+                gap = now - seen_before[track_id]
+                if gap > 0.1:
+                    self._note(now, f"ID {track_id} 다시 연결 ({gap:.2f}초 만)")
             else:
                 self.serial += 1
                 track_id = self.serial
                 self._filters[track_id] = OneEuroPoint(1.0, 0.02)
+                self._note(now, f"ID {track_id} 새로 생김")
             self._raw[track_id] = box
             x1, y1, x2, y2 = box
             cx, cy = self._filters[track_id]((x1 + x2) / 2, (y1 + y2) / 2, now)

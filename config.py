@@ -135,6 +135,7 @@ VAD_AGGRESSIVENESS = 2  # 0(관대) ~ 3(엄격)
 STT_ENDPOINT_MS = 600   # 이만큼 무음이 이어지면 발화 종료로 보고 확정
 STT_BACKEND = "sherpa"   # "sherpa" | "vosk". tools/compare_stt.py 로 같은 녹음 비교
 STT_THREADS = 2         # 음성 인식이 쓰는 CPU 스레드. 느린 노트북에서 1 이면 영상 처리와 덜 다툽니다
+STT_KOREAN_SPACING = True  # Kiwi 로 중간·확정 자막의 띄어쓰기만 보정
 TTS_VOICE = "ko-KR-SunHiNeural"   # edge-tts 캐시 생성용
 
 # 반이중(half-duplex) 게이트
@@ -160,10 +161,10 @@ FACE_LOST_SEC = 0.45        # 짧은 얼굴 검출 누락 허용, 이후 고정 
 CAPTION_HISTORY_LIMIT = 200 # 실행 중 메모리에 보관할 확정 발화 수
 
 # 두 사람이 번갈아 말할 때 입 움직임과 음성 수집 시각으로 화자를 연결합니다.
-AUTO_SPEAKER = True         # --no-auto-speaker 로 기존 수동 대상 선택 사용
+AUTO_SPEAKER = True         # --no-auto-speaker 로 기존 단일 대상 자동 선택 사용
 SPEAKER_MAX_FACES = 4
-SPEAKER_CONFIRM_SEC = 0.25  # 한 얼굴의 움직임이 우세해야 하는 최소 시간
-SPEAKER_HOLD_SEC = 0.4      # 짧은 멈춤 동안 기존 화자 유지
+SPEAKER_CONFIRM_SEC = 0.15  # 한 얼굴의 움직임이 우세해야 하는 최소 시간
+SPEAKER_HOLD_SEC = 0.65      # 이전 생성자 계약용. 현재 선택은 얼굴 ID 관측 동안 유지
 SPEAKER_MOTION_THRESHOLD = 0.08  # 얼굴 폭으로 정규화한 입 벌어짐 변화량/초
 SPEAKER_DOMINANCE = 1.8     # 두 얼굴이 비슷하게 움직이면 화자 불확실
 SPEAKER_AUDIO_DELAY_SEC = 0.65  # 전환 판단을 기다리는 오디오 버퍼 (추가 지연)

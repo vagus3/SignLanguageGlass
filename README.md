@@ -50,8 +50,8 @@ MediaPipe 기준 단어 재학습과 관절 추적 개선은 [MEDIAPIPE_IMPROVEM
 
 | | 상태 |
 |---|---|
-| 소스 모듈·회귀 테스트 | ✅ **53개 전원 통과** (PyTorch→ONNX, CTC·모의 클라우드 통합, HTTP 무인 소크, 얼굴 추적 및 말풍선 UI, 3D 손 특징, 자동 구간 검증 포함). CI 자동 실행(`.github/workflows/tests.yml`); 실기기 관통 테스트 미완료 — 직접 할 테스트는 [`TEST_CHECKLIST.md`](TEST_CHECKLIST.md) |
-| 얼굴 추적 AR 말풍선 & 대화 기록 | ✅ 교대 화자 자동 전환·사람별 말풍선·수동 잠금 및 최근 200개 기록(`--transcript`, H/J/K/L). 실제 두 사람 환경의 전환 정확도는 검증 필요 |
+| 소스 모듈·회귀 테스트 | 회귀 검사에는 PyTorch→ONNX, CTC·모의 클라우드 통합, HTTP 무인 소크, 얼굴 추적 및 말풍선 UI 등이 포함됩니다. CI 자동 실행(`.github/workflows/tests.yml`); 모델 의존 검사는 환경에 따라 건너뛰며 실기기 관통 테스트는 미완료입니다 — [`TEST_CHECKLIST.md`](TEST_CHECKLIST.md) |
+| 얼굴 추적 AR 말풍선 & 대화 기록 | ✅ 교대 화자 자동 전환·사람별 말풍선 및 최근 200개 기록(`--transcript`, H/J/K/L). 실제 두 사람 환경의 전환 정확도는 검증 필요 |
 | 클라우드 수어 번역 | 🟡 CTC+텍스트 언어 모델 기준선과 A/B 측정 도구 구현. Qwen2.5-VL은 도입 예정이며 실제 문장 데이터·GPU 모델·번역 품질 검증 필요 |
 | 3D 방향·자동 구간·특징 비교 | 🟡 3D 손바닥 방향/손목 깊이 분기, 손 움직임 자동 구간(`--auto-segment`), 노트북 정면/안경 시점 분기(`--viewpoint`), 특징 구성 비교 도구(`tools/compare_features.py`) 구현 |
 | 학습 의존성 | ✅ PyTorch 2.4.1 / ONNX 1.16.2 / onnxruntime 1.19.2 / scikit-learn 1.5.2 설치 확인 |
@@ -85,142 +85,53 @@ MediaPipe와 ONNX의 네이티브 연산은 일부 병렬 실행이 가능하지
 아래 그림은 **현재 구현된 CTC 기준선과 노트북 UI**입니다. 도입 예정인 Qwen2.5-VL과
 휴대폰 클라이언트, 미확정인 실물 OLED 연결을 구현 완료된 구성으로 표시하지 않습니다.
 
-### 1. 전체 시스템 구조 및 스레드 데이터 흐름
+### 1. 전체 시스템 데이터 흐름
 
 ```mermaid
 flowchart TB
-    subgraph Capture["📷 캡처 & 센서 입력"]
-        Cam1["노트북 수어 카메라 (현재)"]
-        Cam2["추가 얼굴 카메라 (선택)"]
-        Mic["노트북 마이크"]
-    end
-
-    subgraph Threads["⚙️ 백그라운드 워커 스레드"]
-        subgraph VisionTh["VisionThread (비전 워커)"]
-            MP["MediaPipe Holistic / Hands"]
-            Norm["로컬 단어용 246차원 정규화"]
-            Pose["클라우드용 PoseSequence 2D/3D"]
-            VisionFaceDet["경량 얼굴 검출"]
-            LocalInfer["SignPredictor (ONNX LSTM)"]
-            Seg["ActivitySegmenter (손 움직임 감지)"]
-        end
-
-        subgraph FaceTh["FaceThread (얼굴 워커, 선택)"]
-            FaceDet["경량 얼굴 검출"]
-        end
-
-        subgraph AudioTh["오디오 처리 워커"]
-            STT["SttWorker (sherpa-onnx Zipformer)"]
-            TTS["TtsPlayer (WAV 캐시 / OS 음성)"]
-            Gate{{"AudioGate\n(반이중 에코 억제)"}}
-        end
-
-        subgraph CloudWorkerTh["CloudWorker (클라우드 연동)"]
-            Client["CloudClient / GlossClient"]
-        end
-    end
-
-    subgraph MainTh["🖥️ MainThread (GUI & 조율)"]
-        Tracker["FaceTracker (1:1 공간 ID 추적/선택)"]
-        CapState["CaptionState (자막 수명·만료 제어)"]
-        TxtLayout["TextLayout (한글 줄바꿈)"]
-        HUD["HudRenderer"]
-        Overlay["VideoOverlay"]
-        TransView["TranscriptView (대화 기록)"]
-    end
-
-    subgraph Output["👓 출력 장치 & UI"]
-        OLED["OLED 별도 미리보기 (preview)"]
-        VidWin["영상 창 (실시간 AR 말풍선)"]
-        TransWin["대화 기록 창 (H키)"]
-        Spk["노트북 스피커"]
-    end
-
-    subgraph Server["☁️ 현재 클라우드 기준선 (FastAPI)"]
-        CTC["CTC 연속 수어 인식"]
-        LLM["검수 문장 / 텍스트 LLM (vLLM)"]
-    end
-
-    %% 파이프라인 연결
-    Cam1 --> MP --> Norm
-    Norm --> LocalInfer
-    MP --> Pose --> Seg
-    Cam1 --> VisionFaceDet
-    Cam2 --> FaceDet
-
-    Mic --> Gate
-    Gate -->|음성 스트림| STT
-    STT -->|partial / final / cancel| CapState
-
-    LocalInfer -->|단어 확정| Phrase["PhraseBuilder"]
-    Phrase -->|발화 지시| TTS
-    TTS -.->|재생 중 마이크 입력 차단| Gate
-    TTS --> Spk
-
-    Seg -->|문장 구간| Client
-    Client <-->|좌표 또는 ONNX 글로스 / 번역문| Server
-    Server --> CTC --> LLM
-
-    FaceDet --> Tracker
-    VisionFaceDet -->|얼굴 바운딩 박스| Tracker
-    Tracker --> CapState
-    CapState --> TxtLayout --> HUD & Overlay
-    CapState -->|확정 문장| History["CaptionHistory"] --> TransView
-
-    HUD --> OLED
-    Overlay --> VidWin
-    TransView --> TransWin
+    Cam["카메라 영상"] --> Vision["VisionThread: 손·몸 랜드마크"]
+    Cam --> Face["Face Mesh: 얼굴 박스·입술"]
+    Face --> Tracker["FaceTracker: 공간 ID·박스 중심 평활화"]
+    Tracker --> Timeline["SpeakerTimeline: 화자 추정"]
+    Mic["마이크"] --> Gate["AudioGate"] --> Router["SttWorker / SpeakerAudioRouter"]
+    Timeline --> Router
+    Router --> Book["CaptionBook: 사람별 CaptionState"]
+    Tracker --> Book
+    Book --> Overlay["VideoOverlay: wrap_text 말풍선"]
+    Book --> HUD["HudRenderer: 자체 줄바꿈·OLED 미리보기"]
+    Book --> History["CaptionHistory"] --> Transcript["TranscriptView"]
+    Vision --> Local["로컬 단어 추론 / PhraseBuilder"] --> TTS["TtsPlayer"]
+    Vision --> Segment["발화 구간 녹화"] --> Worker["CloudWorker: cloud 또는 device 클라이언트"]
+    Worker --> Controller["CloudController: 결과 표시 및 발화 조건 검사"]
+    Controller --> HUD
+    Controller -->|허용된 결과| TTS
+    TTS --> Speaker["스피커"]
+    TTS -.->|재생 중 입력 차단| Gate
+    Legacy["--no-auto-speaker: FaceDetection + 단일 CaptionState"] -.-> Overlay
 ```
 
-> **큐 병목 제어**: 비전 및 디스플레이 프레임 큐는 `maxsize=1`로 최신 프레임만 유지하여 오래된 입력을 버립니다. 오디오 큐는 약 1초 분량으로 엄격히 제한하여 지연 누적을 방지합니다.
+> **큐 병목 제어**: 비전 및 얼굴 프레임 큐는 `maxsize=1`로 최신 프레임을 유지합니다. 오디오 큐는 자동 화자 모드에서 최대 12블록(기본 약 3초), 그 외에는 4블록(약 1초)이며 가득 차면 오래된 입력을 버립니다.
 
 ---
 
 ### 2. Phase 1 — 수어 → 음성 (착용자 → 상대방)
 
-현재 구현은 로컬 단어 인식 또는 클라우드 CTC 기준선의 결과를 노트북 스피커로 출력합니다.
+현재 구현은 로컬 단어 인식, 기기 CTC 단어 읽기 또는 클라우드 CTC 기준선의 결과를 노트북 스피커로 출력합니다.
 Qwen2.5-VL 도입 시 수어 입력·서버 추론 경로를 추가하고, 확정 문장을 TTS에 전달하도록 확장합니다.
 
 ```mermaid
 flowchart LR
-    subgraph Input["입력"]
-        Hand["손·몸 움직임"]
-    end
-
-    subgraph Feature["특징 추출 (src/landmarks.py)"]
-        MP["MediaPipe Holistic"]
-        Extract["246차원 wearable-v3\n(몸: 어깨 기준, 손: 손목/손바닥 기준)"]
-    end
-
-    subgraph LocalPath["Local 인식 경로 (--sign-backend local)"]
-        Window["최근 1.0초 리샘플\n(30프레임 슬라이딩 윈도우)"]
-        ONNX["ONNX LSTM 단어 추론\n(5프레임 스트라이드)"]
-        Latch["3단 확정 판정\n① 신뢰도 ≥ 0.8\n② 5회 중 3회 다수결\n③ 1.2초 쿨다운"]
-        Builder["PhraseBuilder\n(단어열 문장 조합 및 지연 발화)"]
-    end
-
-    subgraph CloudPath["현재 Cloud 기준선 (--sign-backend cloud)"]
-        AutoSeg["손 움직임 자동 구간\n(--auto-segment / SPACE)"]
-        PoseSeq["PoseSequence (2D/3D)"]
-        CloudSrv["SignServer (FastAPI)"]
-        CTC["CTC 연속 수어 인식\n(또는 기기 ONNX 인식)"]
-        Trans["문장 생성\n(검수 문장 / 텍스트 LLM)"]
-    end
-
-    subgraph AudioOut["음성 출력"]
-        TTS["TtsPlayer (WAV 캐시 / OS 음성)"]
-        Gate{{"AudioGate (반이중 게이트)"}}
-        Spk["노트북 스피커"]
-    end
-
-    Hand --> MP --> Extract
-    Extract --> LocalPath
-    Extract --> CloudPath
-
-    LocalPath --> Window --> ONNX --> Latch --> Builder --> TTS
-    CloudPath --> AutoSeg --> PoseSeq --> CloudSrv --> CTC --> Trans --> TTS
-
-    TTS --> Gate --> Spk
+    Input["카메라 / MediaPipe 손·몸 좌표"] --> Local["로컬 246차원 특징 / ONNX LSTM"]
+    Local --> Phrase["PhraseBuilder"] --> TTS["TtsPlayer"]
+    Input --> Segment["수동 또는 자동 발화 구간"] --> Pose["PoseSequence"]
+    Pose --> CloudA["Cloud A: 좌표 전송"] --> ServerCTC["서버 CTC"] --> Translate["서버 문장 생성"]
+    Pose --> CloudB["Cloud B: 기기 ONNX CTC"] --> Gloss["GlossClient: 글로스 전송"] --> Translate
+    Pose --> Device["DeviceSignClient: 기기 ONNX CTC"] --> Words["글로스의 한국어 뜻을 순서대로 읽기"]
+    Translate --> Controller["CloudController: 결과 표시·발화 조건 검사"]
+    Words --> Controller
+    Controller -->|허용된 결과| TTS
+    TTS --> Speaker["스피커"]
+    TTS -.-> Gate["AudioGate: 마이크 차단"]
 ```
 
 1. **랜드마크 추출 & 착용형 정규화 (`src/landmarks.py`)**:
@@ -233,6 +144,7 @@ flowchart LR
 3. **Cloud 경로 연속 수어 (`src/cloud_sign.py`, `src/sign_server.py`)**:
    - 손 움직임 기반 자동 구간 분할(`ActivitySegmenter`) 또는 키 입력(SPACE)으로 발화 구간 검출.
    - 시퀀스 좌표 전송 후 CTC 모델 디코딩 및 언어 모델(vLLM) 기반 자연어 문장 생성.
+   - `--recognize device`는 기기에서 CTC를 실행하고 글로스를 서버에 보내는 비교 경로입니다. `--sign-backend device`는 서버 없이 글로스의 한국어 뜻을 순서대로 읽으며 자연스러운 문장을 생성하지 않습니다.
 4. **TTS 출력 (`src/tts_player.py`)**:
    - 미리 생성한 16kHz WAV 캐시를 비동기 재생하며, 캐시에 없으면 OS 음성으로 대체.
    - 캐시는 합성 대기를 줄이지만 큐·재생 장치 지연은 남습니다. 자유 생성 문장용 TTS 엔진은 후속 작업입니다.
@@ -245,50 +157,29 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    subgraph Audio["음성 인식 (STT)"]
-        Mic["상대방 음성 (노트북 마이크)"]
-        Gate{{"AudioGate\n(스피커 출력 중 마이크 뮤트)"}}
-        Sherpa["SttWorker (sherpa-onnx Zipformer 스트리밍)\npartial(말하는 중) / final(발화 확정)"]
-    end
-
-    subgraph Vision["얼굴 인식 & 공간 추적"]
-        Cam["전방 카메라 영상"]
-        Det["경량 얼굴 검출 (FaceDetection)"]
-        Track["FaceTracker + SpeakerTimeline\n• 공간 ID 및 입 움직임 추적\n• 음성 수집 시각으로 교대 화자 연결\n• 클릭으로 수동 잠금"]
-        Smooth["OneEuroFilter\n(좌표 떨림 완화)"]
-    end
-
-    subgraph Layout["자막 수명 & 레이아웃 관리"]
-        State["CaptionState (src/caption_state.py)\n• 중간결과 실시간 갱신\n• 확정 문장 3~10초 유지\n• 만료/얼굴 유실 타이밍 관리"]
-        Txt["TextLayout (src/text_layout.py)\n• 화면 폭 자동 줄바꿈\n• 최대 3줄 표시 + 생략(…)"]
-        Hist["CaptionHistory (src/caption_history.py)\n• 최근 확정 발화 200개 메모리 보관"]
-    end
-
-    subgraph Display["다중 디스플레이 출력"]
-        OLED["OLED 별도 미리보기 (preview)\n• 얼굴 옆 말풍선 배치\n• 시야 밖 화살표 가이드\n• 하단 고정 자막 (--fixed-caption)"]
-        Video["VideoOverlay (웹캠 창)\n• 실제 카메라 영상 위 AR 말풍선\n• 화자 선택 박스 & 음성 인식 실시간 표시"]
-        Transcript["TranscriptView (대화 기록 창)\n• H키 토글, J/K 스크롤, L 최신 복귀"]
-    end
-
-    Mic --> Gate --> Sherpa --> State
-    Cam --> Det --> Track --> Smooth --> State
-    State --> Txt
-    State --> Hist
-
-    Txt --> OLED
-    Txt --> Video
-    Hist --> Transcript
+    Mic["마이크"] --> Gate["AudioGate"] --> Router["SpeakerAudioRouter: 20ms PCM 구간 분리"]
+    Cam["전방 카메라"] --> Face["Face Mesh: 얼굴 박스·입술 측정"] --> Tracker["FaceTracker: ID 추적·박스 중심 평활화"]
+    Face --> Timeline["SpeakerTimeline: 입 움직임 이력"]
+    Tracker --> Timeline
+    Timeline -->|수집 시각 기준 화자 판정| Router
+    Router --> Decoder["STT 디코더: sherpa 기본 / Vosk 대체"] --> Book["CaptionBook / CaptionState: 사람별 발화"]
+    Tracker --> Book
+    Book --> Overlay["VideoOverlay: wrap_text 말풍선"]
+    Book --> HUD["HudRenderer: 자체 줄바꿈·OLED 미리보기"]
+    Book --> History["CaptionHistory: 확정 발화"] --> View["TranscriptView"]
+    Legacy["--no-auto-speaker: FaceDetection + 단일 CaptionState"] -.-> Overlay
 ```
 
 1. **스트리밍 STT & 반이중 게이트 (`src/stt_worker.py`, `src/audio_gate.py`)**:
    - `sherpa-onnx` Zipformer 스트리밍으로 상대방 말을 즉각 텍스트화 (`partial` 중간 결과 및 `final` 확정 이벤트).
+   - Kiwi가 중간·확정 자막의 한국어 띄어쓰기를 로컬에서 보정합니다. 공백 외의 글자가 달라지거나 보정기가 실패하면 원문을 유지합니다. `config.py`의 `STT_KOREAN_SPACING`으로 끌 수 있습니다.
    - 착용자가 수어로 말하여 TTS가 출력되는 동안에는 `AudioGate`가 마이크를 차단하여 자막 루프(에코) 방지.
 2. **공간 얼굴 추적 (`src/face_tracker.py`)**:
    - 얼굴별 입 움직임과 오디오 수집 시각을 연결해 교대 화자를 선택하고, 화자 전환 경계에서 인식 구간 분리.
-   - 마우스 좌클릭으로 수동 잠금하며, `OneEuroFilter`로 위치 떨림을 완화. 각 사람의 마지막 말풍선을 유지.
+   - `FaceTracker`의 `OneEuroPoint`가 추적 박스 중심의 떨림을 완화합니다. `CaptionBook`은 각 사람의 최근 말풍선을 유지합니다.
 3. **자막 수명 & 레이아웃 (`src/caption_state.py`, `src/text_layout.py`)**:
    - 발화 중에는 실시간 갱신, 발화 종료 후 문장 길이에 따라 3~10초간 말풍선 유지.
-   - 화면 폭에 맞춘 자동 개행 및 최대 3줄 표시.
+   - 영상 말풍선은 `wrap_text`로 화면 폭에 맞춰 최대 3줄을 표시하며, HUD는 자체 줄바꿈을 사용합니다.
 4. **다양한 출력 경로**:
    - **OLED 별도 미리보기**: `HudRenderer`를 거쳐 `HUD (OLED simulation)` 창에 표시. 내 번역과 상대 자막의 두 영역 유지.
    - **비디오 오버레이**: 웹캠 영상 창 위에 AR 말풍선과 화자 추적 박스를 오버레이 (`--video-captions`).
@@ -314,6 +205,7 @@ src/
   hud.py             ★ 좌표변환 + 말풍선 렌더 + SSD1306 패킹 + 표시 내용 선택(HudContent)
   oled_bridge.py       preview / null + 이전 실물 연결 코드(serial / pi, 현재 미사용)
   stt_worker.py        스트리밍 STT 스레드 (sherpa-onnx 기본, vosk 대체)
+  korean_spacing.py    Kiwi 기반 한국어 자막 띄어쓰기 보정
   tts_player.py        비동기 TTS 재생 워커
   audio_gate.py        반이중 게이트 (스피커 출력 중 마이크 뮤트, 에코 루프 차단)
   latency.py           지연 측정 하네스 (p50 / p95, 최근 표본·실행 전체 구분)
@@ -324,7 +216,8 @@ src/
   translation.py       용어집·검수 문장·언어 모델(vLLM)·실패 시 미리보기
   sign_server.py       번역 API 서버 (FastAPI)
   cloud_sign.py        장치 쪽 구간 녹화·서버 클라이언트
-  cloud_control.py     cloud 경로 명령·결과 처리
+  cloud_control.py     cloud/device 경로 명령·결과 처리
+  device_sign.py       기기 CTC 글로스의 한국어 뜻 읽기
   segmenter.py         손 움직임 기반 자동 문장 구간 (ActivitySegmenter)
   data_sources.py      학습 데이터 출처 (manifest → 모델 → /health)
   dataset_contract.py  데이터셋 규격 및 메타데이터 계약 검증
@@ -332,11 +225,11 @@ src/
   collect_continuous.py 문장 단위 연속 수어 좌표 수집기
   train.py             Step 1-2 LSTM 단어 모델 학습
   train_continuous.py  CTC 연속 수어 모델 학습 스크립트
-  face_tracker.py    ★ 다중 얼굴 검출, 1:1 공간 ID 추적 및 화자 선택
+  face_tracker.py    ★ 얼굴 박스 중심 평활화, 1:1 공간 ID 추적 및 선택
   face_activity.py    다중 Face Mesh 입술 좌표와 크기 정규화
-  active_speaker.py   입 움직임 이력·전환 조건·수동 잠금
+  active_speaker.py   입 움직임 이력·전환 조건
   speaker_audio.py    오디오 수집 시각 및 화자별 인식 구간 분리
-  caption_state.py   ★ 자막 수명 주기(홀드/만료/얼굴 연결) 상태 머신
+  caption_state.py   ★ CaptionBook 사람별 발화와 CaptionState 수명·얼굴 연결
   caption_history.py   최근 200개 확정 대화 기록 메모리 보관
   text_layout.py       한글 폰트 로딩·화면 폭 맞춤 줄바꿈
   video_overlay.py   ★ 카메라 영상 위 실시간 AR 말풍선·얼굴 테두리 렌더링
@@ -371,7 +264,7 @@ tools/
 
 tests/
   run_all.py           전체 테스트 실행 (pytest 불필요)
-  test_*.py            회귀 테스트 53종 (전원 통과)
+  test_*.py            회귀 테스트 스크립트 (일부 모델 의존)
 
 firmware/
   oled_bridge.ino      이전 USB↔SPI 브리지 펌웨어 (현재 구성에서 미사용, 보존)
@@ -604,7 +497,7 @@ Qwen2.5-VL 영상 인식은 아직 연결돼 있지 않습니다.
 | `python tools/check_mount.py --duration 30 --preview` | 장착 시점 손/얼굴 검출률 측정 |
 | `python tools/compare_features.py` | 특징 구성(2D/3D/정규화)별 손실 및 성능 비교 |
 | `python -m src.hud` | 보존된 OLED 말풍선 레이아웃 미리보기 |
-| `python tests/run_all.py` | 회귀 테스트 53종 전체 실행 |
+| `python tests/run_all.py` | 회귀 테스트 스크립트 전체 실행 |
 
 `DISPLAY_BACKEND = "preview"`면 추가 디스플레이 하드웨어 없이 OLED 별도 미리보기를
 사용할 수 있습니다. 소프트웨어 레이아웃은 확인할 수 있지만 실제 광학 정렬·착용 가독성은
@@ -632,8 +525,11 @@ python main.py --no-sign --display preview --no-video-captions
 
 기본값은 **두 사람이 번갈아 말할 때 화자를 자동 선택하는 모드**입니다. 얼굴별 입술
 좌표에서 얼굴 크기로 정규화한 입 벌어짐의 변화량을 측정합니다. 한 사람의 움직임이
-0.25초 이상 우세할 때 전환하며, 입을 벌린 채 멈춰 있는 상태는 발화로 선택하지 않습니다.
-실제 음성 활동이 있는 동안 선택 테두리를 표시합니다. 얼굴이 없거나 여러 얼굴의
+최근 0.24초의 반복 움직임을 누적해 판단하고, 후보가 0.15초 이상 우세하면 전환합니다.
+후보의 짧은 움직임 공백은 0.12초까지 허용합니다. 한 번 확정한 화자는 같은 얼굴 ID가
+화면에서 관측되는 동안 조용해져도 유지합니다. 얼굴 유실·모호한 경쟁·새 화자 전환은
+기존 선택을 해제하거나 변경합니다. 다시 나타난 새 ID는 재선택이 필요합니다. 입을 한 번 벌렸다 닫거나 벌린 채 멈춘 상태만으로 선택하지 않습니다.
+확정된 얼굴 ID가 유지되는 동안 선택 테두리를 표시합니다. 얼굴이 없거나 여러 얼굴의
 움직임이 비슷하면 특정 사람에게 붙이지 않고 하단 공통 자막을 사용합니다.
 
 오디오는 기본 0.65초 동안 보관하여 입 움직임 확인을 기다립니다. 오디오 장치의 수집
@@ -647,10 +543,8 @@ python main.py --no-sign --display preview --no-video-captions
 쓰면 말풍선은 그 영상 위에 표시하며, 한 카메라에서는 미러링된 영상과 얼굴
 좌표를 함께 뒤집습니다. OLED 별도 미리보기는 기존 시야/광학 보정 좌표를 유지합니다.
 
-- 영상의 얼굴을 **왼쪽 클릭**하면 해당 사람으로 수동 잠금합니다. 다른 사람의 입이
-  움직여도 자동 전환하지 않으며, **우클릭**으로 자동 전환에 복귀합니다. 선택을
-  바꿔도 이전 문장은 원래 화자에게 남습니다. 선택한 얼굴이 사라지면 새 음성은
-  화자 불확실로 처리합니다.
+- 화자는 자동으로 선택합니다. 얼굴 클릭으로 수동 선택하거나 잠그는 기능은 제공하지 않습니다.
+  얼굴이 사라지거나 판단이 불확실하면 새 음성은 하단 공통 자막으로 표시합니다.
 - 말풍선은 얼굴 영역 바깥의 좌우 공간에 배치하고, 공간이 부족하면 하단으로
   이동합니다. 여러 말풍선은 세로 위치를 조정해 겹침을 줄입니다. 한글은 화면 폭에
   맞춰 줄바꿈하며 최대 3줄의 최근 내용을 표시합니다.
@@ -671,9 +565,9 @@ python main.py --no-sign --display preview --no-video-captions
   중복 확정 결과는 기록에 추가하지 않습니다. 번호는 화면의 공간 추적 ID이며
   사람의 신원이나 음성 지문을 뜻하지 않습니다.
 
-`config.py`의 `SPEAKER_CONFIRM_SEC`, `SPEAKER_HOLD_SEC`, `SPEAKER_MOTION_THRESHOLD`,
+`config.py`의 `SPEAKER_CONFIRM_SEC`, `SPEAKER_MOTION_THRESHOLD`,
 `SPEAKER_DOMINANCE`, `SPEAKER_AUDIO_DELAY_SEC`로 전환 조건과 추가 지연을 조절합니다.
-`--no-auto-speaker`를 주면 이전의 단일 대상 선택·단일 말풍선 방식으로 실행합니다.
+`--no-auto-speaker`를 주면 FaceDetection과 단일 CaptionState를 사용하는 이전의 단일 대상 선택·단일 말풍선 방식으로 실행합니다.
 자막만 사용하는 `--no-sign`에서는 Face Mesh를 사용하고 수어용 Holistic은 실행하지
 않습니다. 영상 말풍선은 최대 30fps로 갱신하며 기록 창은 내용이나 스크롤 위치가 바뀔 때
 갱신합니다.
@@ -682,6 +576,8 @@ python main.py --no-sign --display preview --no-video-captions
 신원을 인식하지 않습니다. 웃음·씹기·화면 밖 발화·사람 교차는 입 움직임과 단일 마이크만으로
 완전히 구분할 수 없습니다. 기본 전환 임계값은 실제 두 사람과 카메라 환경에서 확인해야
 합니다. 카메라 시각은 프레임을 읽은 시각이므로 드라이버 내부의 영상 지연도 영향을 줍니다.
+기존 합성음성 캐시를 실제 Sherpa 모델로 인식하는 검사는 통과했습니다. 실제 사람의
+STT 정확도, 발화 시작 음절 보존, 화자 연결 정확도와 지연은 실기기에서 아직 검증하지 않았습니다.
 
 확인 순서: A→B 교대 → 짧은 침묵 → 듣는 사람의 웃음 → 얼굴 가림 → 동시 발화.
 각 단계에서 A의 문장이 B로 옮겨 가지 않는지, 불확실한 구간이 공통 자막으로 나오는지

@@ -94,17 +94,17 @@ def wait_key(delay):
         assert state["captions"][2].text == "B의 말"
         assert state["records"][0].track_id == 1
         # The image is mirrored: x=480 on the camera becomes x=159 on screen.
-        callbacks["Signglass - captions"](cv2.EVENT_LBUTTONDOWN, 159, 200, 0, None)
+        assert "Signglass - captions" not in callbacks
         emit("final", "B의 마지막 문장", 2, 2)
     elif current == 4:
-        assert state["manual"]
+        assert not state["manual"]
         assert [r.track_id for r in state["records"]] == [1, 2]
         assert state["captions"][1].text == "A의 마지막 문장"
         emit("partial", "화자 불확실", 3, None)
     elif current == 5:
         assert set(state["captions"]) == {1, 2, None}
         assert state["captions"][None].anchor(None, now[0]) is None
-        callbacks["Signglass - captions"](cv2.EVENT_RBUTTONDOWN, 0, 0, 0, None)
+        assert "Signglass - captions" not in callbacks
         now[0] += .6
         state["vision"].emit([])
         return -1
@@ -132,4 +132,4 @@ with patch.object(sys, "argv", ["main.py", "--no-sign", "--no-tts", "--display",
         patch("cv2.setMouseCallback", lambda name, fn: callbacks.update({name: fn})), \
         contextlib.redirect_stdout(io.StringIO()):
     main.main()
-print("[OK] automatic-speaker main: separate bubbles, late final, manual lock, unknown and occlusion")
+print("[OK] automatic-speaker main: separate bubbles, late final, automatic-only selection, unknown and occlusion")

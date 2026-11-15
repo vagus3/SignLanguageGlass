@@ -93,7 +93,7 @@ class VideoOverlay:
             draw = ImageDraw.Draw(image)
             font = korean_font(size)
             draw.text((10, 5), f"대화 상대: {target} · {mode}", font=font, fill=(230, 238, 245))
-            draw.text((10, size + 10), "클릭: 선택 · 우클릭: 자동 · H: 기록", font=font,
+            draw.text((10, size + 10), "화자 자동 선택 · H: 기록", font=font,
                       fill=(160, 175, 190))
             return np.asarray(image)[:, :, ::-1].copy()
         return self._cached(("header", w, size, target, mode), build)
