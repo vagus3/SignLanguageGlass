@@ -115,9 +115,9 @@ SEGMENT_REST_RATIO = 1.0
 # 자동 노출이면 조금만 어두워도 셔터가 길어져 빠른 손이 뭉개지고,
 # MediaPipe 가 손가락 관절을 놓칩니다. 셔터를 고정하고 조명으로 밝기를 메우세요.
 # ※ macOS AVFoundation 은 OpenCV 노출 제어를 대부분 무시합니다(정상). 아래 참고.
-CAM_MANUAL_EXPOSURE = True
-CAM_EXPOSURE = -8       # Windows: 과노출 억제 시작값. 어두우면 -7/-6, 밝으면 -9
-CAM_GAIN = None         # None = 건드리지 않음. 어두우면 100~200 시도
+CAM_MANUAL_EXPOSURE = False
+CAM_EXPOSURE = -8
+CAM_GAIN = None        
 
 def camera_backend():
     """OS별 최적 백엔드. Windows MSMF 는 첫 프레임이 3~5초 늦습니다."""
@@ -158,6 +158,15 @@ CAPTION_HOLD_SEC = 3.0      # 확정 자막 최소 유지 시간 (긴 문장은 
 CAPTION_PARTIAL_TIMEOUT = 8.0
 FACE_LOST_SEC = 0.45        # 짧은 얼굴 검출 누락 허용, 이후 고정 자막
 CAPTION_HISTORY_LIMIT = 200 # 실행 중 메모리에 보관할 확정 발화 수
+
+# 두 사람이 번갈아 말할 때 입 움직임과 음성 수집 시각으로 화자를 연결합니다.
+AUTO_SPEAKER = True         # --no-auto-speaker 로 기존 수동 대상 선택 사용
+SPEAKER_MAX_FACES = 4
+SPEAKER_CONFIRM_SEC = 0.25  # 한 얼굴의 움직임이 우세해야 하는 최소 시간
+SPEAKER_HOLD_SEC = 0.4      # 짧은 멈춤 동안 기존 화자 유지
+SPEAKER_MOTION_THRESHOLD = 0.08  # 얼굴 폭으로 정규화한 입 벌어짐 변화량/초
+SPEAKER_DOMINANCE = 1.8     # 두 얼굴이 비슷하게 움직이면 화자 불확실
+SPEAKER_AUDIO_DELAY_SEC = 0.65  # 전환 판단을 기다리는 오디오 버퍼 (추가 지연)
 
 # 카메라 시야(110도) 중 디스플레이가 실제로 덮는 영역의 비율.
 # 얼굴이 이 영역 밖이면 말풍선 대신 방향 화살표를 띄웁니다.

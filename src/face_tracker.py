@@ -39,6 +39,7 @@ class FaceTracker:
         self._filters = {}
         self.selected_id = None
         self.manual = False
+        self.mouths = {}
         self._timeline = deque(maxlen=128)
 
     def clear(self):
@@ -46,6 +47,7 @@ class FaceTracker:
         self._raw.clear()
         self._filters.clear()
         self._timeline.clear()
+        self.mouths.clear()
         # In manual mode a lost selection stays unbound until another click.
         # Automatically switching people would attribute speech incorrectly.
         if not self.manual:
@@ -98,11 +100,12 @@ class FaceTracker:
         self.selected_id = tracks[0].track_id if len(tracks) == 1 else None
         self._remember(now)
 
-    def update(self, boxes, size, now):
+    def update(self, boxes, size, now, mouth_openings=()):
         if size != self.size:
             self.clear()
             self.size = size
         previous = self.tracks(now)
+        self.mouths = {}
         if not boxes:
             self._remember(now)
             return self.current(now)
@@ -115,7 +118,7 @@ class FaceTracker:
                      if len(ids) != 1 or counts[track_id] != 1}
         for track_id in ambiguous:
             self._remove(track_id)
-        for box, ids in zip(boxes, candidates):
+        for index, (box, ids) in enumerate(zip(boxes, candidates)):
             if len(ids) == 1 and ids[0] not in ambiguous:
                 track_id = ids[0]
             else:
@@ -128,6 +131,8 @@ class FaceTracker:
             hw, hh = (x2 - x1) / 2, (y2 - y1) / 2
             self._tracks[track_id] = FaceTrack(
                 track_id, (cx - hw, cy - hh, cx + hw, cy + hh), now)
+            if index < len(mouth_openings):
+                self.mouths[track_id] = mouth_openings[index]
         # Keep a still-tracked partner, otherwise auto-select only a lone face.
         if not self.manual and self.selected_id not in self._tracks:
             tracks = self.tracks(now)

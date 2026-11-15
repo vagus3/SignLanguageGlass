@@ -37,6 +37,7 @@ class VideoOverlay:
         self.sprites = OrderedDict()
         self.side = "right"
         self.track_id = None
+        self._sides = OrderedDict()
 
     def _font(self, size):
         return korean_font(size)
@@ -130,7 +131,7 @@ class VideoOverlay:
 
     # ---------------------------------------------------------------- render
     def render(self, frame, caption, track, now, mirror=False, tracks=(), manual=False,
-               selected_id=None):
+               selected_id=None, captions=None, speaker_mode=False):
         # Always a new array: debug drawing must not modify the capture worker's frame.
         output = cv2.flip(frame, 1) if mirror else frame.copy()
         h, w = output.shape[:2]
@@ -149,10 +150,25 @@ class VideoOverlay:
                 cv2.rectangle(output, (a, b), (c, d), _bgr(color), 1)
             self._put_text(output, (x1 + 4, max(62, y1 - 24)), f"대상 {candidate.track_id}",
                            ui_size, color)
-        target = f"대상 {track.track_id}" if track else "미지정"
+        target = f"대상 {track.track_id}" if track else "화자 불확실" if speaker_mode else "미지정"
         header = self._header(w, ui_size, target, "수동" if manual else "자동")
         rows = min(h, header.shape[0])
         output[:rows] = header[:rows]
+        occupied = []
+        by_id = {t.track_id: t for t in tracks}
+        for state in ([caption] if captions is None else captions):
+            bound = track if captions is None else by_id.get(state.track_id)
+            self.side = self._sides.get(state.track_id, "right")
+            self.track_id = state.track_id
+            self._draw_caption(output, state, bound, now, mirror, occupied)
+            self._sides[state.track_id] = self.side
+            self._sides.move_to_end(state.track_id)
+            if len(self._sides) > CACHE_SIZE:
+                self._sides.popitem(last=False)
+        return output
+
+    def _draw_caption(self, output, caption, track, now, mirror, occupied):
+        h, w = output.shape[:2]
         if not caption.visible(now):
             return output
         size = max(12, min(28, w // 32, h // 12))
@@ -194,6 +210,20 @@ class VideoOverlay:
                 box = None  # too little room: readable fixed caption
         if not box:
             bx, by = (w - bw) / 2, max(4, h - bh - 16)
+        if occupied:
+            candidates = [by] + [y for rect in occupied for y in (rect[3] + 8, rect[1] - bh - 8)]
+            candidates = [max(62, min(y, h - bh - 8)) for y in candidates]
+
+            def cost(y):
+                overlap = sum(max(0, min(bx + bw, r[2]) - max(bx, r[0]))
+                              * max(0, min(y + bh, r[3]) - max(y, r[1])) for r in occupied)
+                return overlap, abs(y - by)
+
+            by = min(candidates, key=cost)
+            if tail:
+                ty = max(by + 10, min((box[1] + box[3]) / 2, by + bh - 10))
+                tail = [(edge, ty - 7), (tip, ty), (edge, ty + 7)]
+        occupied.append((bx, by, bx + bw, by + bh))
         bgr, alpha, ox, oy = self._bubble(lines, size, caption.partial, bx, by, bw, bh, tail)
         x0, y0 = max(0, ox), max(0, oy)
         x1, y1 = min(w, ox + alpha.shape[1]), min(h, oy + alpha.shape[0])

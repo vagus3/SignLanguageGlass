@@ -19,6 +19,7 @@ import sys
 import json
 import queue
 import threading
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config as C
 from src import clock
 from src.caption_state import CaptionEvent
+from src.speaker_audio import AudioBlock, SpeakerAudioRouter
 
 BACKENDS = ("sherpa", "vosk")
 
@@ -185,12 +187,14 @@ class SttWorker(threading.Thread):
     caption_events=True이면 partial/final/cancel의 두 번째 값은 CaptionEvent.
     오류와 기본 호출 모드는 기존 문자열 계약을 유지합니다. observed_at은
     인식 결과 생성 시각이며 음성 시작/종료 시각이나 화자 식별 결과가 아닙니다.
+    speakers가 있으면 수집 시각 기준으로 오디오를 잠시 보관·분리하고,
+    audio_start/audio_end/speaker_id를 CaptionEvent에 함께 전달합니다.
     """
 
     daemon = True
 
     def __init__(self, out_queue=None, device=None, use_vad=True, gate=None, backend=None,
-                 caption_events=False):
+                 caption_events=False, speakers=None):
         super().__init__(name="stt")
         self.out = out_queue or queue.Queue()
         self.device = device
@@ -198,6 +202,7 @@ class SttWorker(threading.Thread):
         self.backend = backend or C.STT_BACKEND
         self.gate = gate            # AudioGate: TTS 재생 중 입력 차단
         self.caption_events = caption_events
+        self.speakers = speakers
         self._utterance_id = 0
         self._utterance_open = False
         self._gate_interrupted = threading.Event()
@@ -208,7 +213,8 @@ class SttWorker(threading.Thread):
         self._quit = threading.Event()
         # AUDIO_BLOCK=4000이면 한 블록이 250ms입니다. 32개 큐는 장애 순간에
         # 최대 8초 지연을 만들 수 있으므로 짧게 유지하고 최신 입력을 살립니다.
-        self._audio = queue.Queue(maxsize=4)
+        self._audio = queue.Queue(maxsize=12 if speakers is not None else 4)
+        self._capture_serial = 0
 
     def stop(self):
         self._quit.set()
@@ -221,14 +227,15 @@ class SttWorker(threading.Thread):
             return VoskDecoder(use_vad=self.use_vad)
         return open_decoder(self.backend)
 
-    def _publish(self, kind, text):
+    def _publish(self, kind, text, **attribution):
         if not self.caption_events:
             self.out.put((kind, text))
             return
         if not self._utterance_open:
             self._utterance_id += 1
             self._utterance_open = True
-        self.out.put((kind, CaptionEvent(kind, text, self._utterance_id, clock.now())))
+        self.out.put((kind, CaptionEvent(kind, text, self._utterance_id, clock.now(),
+                                       **attribution)))
         if kind in ("final", "cancel"):
             self._utterance_open = False
 
@@ -236,6 +243,8 @@ class SttWorker(threading.Thread):
         try:
             import sounddevice as sd
             decoder = self._decoder()
+            router = (SpeakerAudioRouter(decoder, self._publish, self.speakers, C.AUDIO_RATE)
+                      if self.speakers is not None else None)
         except ImportError as e:
             self.out.put(("error", f"패키지 없음: {e}" + self._fallback_hint()))
             return
@@ -244,22 +253,29 @@ class SttWorker(threading.Thread):
             return
 
         def cb(indata, frames, time_info, status):
+            self._capture_serial += 1
             # TTS 중 받은 자기 소리를 애초에 큐에 넣지 않습니다. 재생이 끝난 뒤
             # 밀린 블록이 STT로 흘러가 에코 자막이 되는 경로도 차단합니다.
             if self.gate is not None and not self.gate.is_open():
                 self._gate_interrupted.set()
                 return
+            block = AudioBlock.capture(bytes(indata), C.AUDIO_RATE, time_info,
+                                       clock.now(), self._capture_serial,
+                                       bool(getattr(status, "input_overflow", False)))
             try:
-                self._audio.put_nowait(bytes(indata))
+                self._audio.put_nowait(block)
             except queue.Full:
                 # 오래된 250ms를 버리고 현재 블록을 보존합니다. 음성 일부가
                 # 빠지더라도 수 초 늦은 자막보다 실시간 대화에서 덜 해롭습니다.
                 try:
                     self._audio.get_nowait()
-                    self._audio.put_nowait(bytes(indata))
+                    self._audio.put_nowait(block)
                 except queue.Empty:
                     pass
 
+        pending = deque()
+        last_serial = None
+        audio_start = None
         try:
             with sd.RawInputStream(samplerate=C.AUDIO_RATE, blocksize=C.AUDIO_BLOCK,
                                    dtype="int16", channels=1,
@@ -270,7 +286,13 @@ class SttWorker(threading.Thread):
                     if (self._gate_interrupted.is_set() or
                             (self.gate is not None and not self.gate.is_open())):
                         self._gate_interrupted.clear()
-                        decoder.reset()
+                        if router:
+                            router.cancel()
+                            self.speakers.mute()
+                        else:
+                            decoder.reset()
+                        pending.clear()
+                        audio_start = last_serial = None
                         while not self._audio.empty():
                             try:
                                 self._audio.get_nowait()
@@ -281,17 +303,42 @@ class SttWorker(threading.Thread):
                         self._quit.wait(0.02)
                         continue
                     try:
-                        data = self._audio.get(timeout=0.3)
+                        block = self._audio.get(timeout=0.02 if router else 0.3)
                     except queue.Empty:
-                        continue
+                        block = None
                     # TTS 가 스피커로 나가는 동안은 내 목소리를 받아쓰지 않습니다.
                     # 인식기도 리셋해서 반쯤 들어간 자기 음성을 버립니다.
                     if self.gate is not None and not self.gate.is_open():
                         decoder.reset()
                         self._gate_interrupted.set()
                         continue
-                    for kind, text in decoder.feed(data):
-                        self._publish(kind, text)
+                    if block is not None:
+                        if (block.discontinuity or
+                                last_serial is not None and block.serial != last_serial + 1):
+                            # Never join text across dropped audio or an input overflow.
+                            if router:
+                                router.cancel()
+                            else:
+                                decoder.reset()
+                            pending.clear()
+                            audio_start = None
+                            if self.caption_events and self._utterance_open:
+                                self._publish("cancel", "")
+                        last_serial = block.serial
+                        if router:
+                            pending.append((block.end, router.prepare(block)))
+                        else:
+                            if audio_start is None:
+                                audio_start = block.start
+                            for kind, text in decoder.feed(block.pcm):
+                                self._publish(kind, text, audio_start=audio_start,
+                                              audio_end=block.end)
+                                if kind == "final":
+                                    audio_start = None
+                    if router:
+                        delay = max(C.SPEAKER_AUDIO_DELAY_SEC, self.speakers.confirm_sec + .1)
+                        while pending and clock.now() >= pending[0][0] + delay:
+                            router.feed(pending.popleft()[1])
         except Exception as e:
             self.out.put(("error", str(e)))
 
