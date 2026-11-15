@@ -97,6 +97,9 @@ def fake_sounddevice(blocks, gate, closed_at):
 gate, decoder, out = Gate(), FakeDecoder(), queue.Queue()
 sys.modules["sounddevice"] = fake_sounddevice(6, gate, closed_at={2, 3})
 worker = SttWorker(out, gate=gate, backend="sherpa")
+# This test covers audio gating only. Kiwi startup time is covered by the
+# dedicated spacing test and must not make this timing-sensitive fake stream.
+worker._spacing = None
 worker._decoder = lambda: decoder
 worker.start()
 time.sleep(0.5)
