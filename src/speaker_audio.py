@@ -82,6 +82,8 @@ class SpeakerAudioRouter:
                     self.finish()  # A is finalized before ANY of B's samples enter STT.
                 if self.start is None:
                     self.owner, self.start = owner, start
+            if self.start is None:
+                continue  # Do not carry unowned pre-speech PCM into the next turn.
             self.end = end
             for kind, text in self.decoder.feed(pcm):
                 # Suppress silence hallucinations without a VAD speech segment.

@@ -29,6 +29,7 @@ import config as C
 from src import clock
 from src.caption_state import CaptionEvent
 from src.speaker_audio import AudioBlock, SpeakerAudioRouter
+from src.korean_spacing import KoreanSpacing
 
 BACKENDS = ("sherpa", "vosk")
 
@@ -90,7 +91,11 @@ class VoskDecoder:
 
     @staticmethod
     def _has_speech(vad, pcm, rate=16000, frame_ms=30):
-        """30ms 프레임 단위로 발화가 하나라도 있으면 통과."""
+        """일반 입력은 30ms, 짧은 라우터 입력은 유효한 20/10ms로 검사."""
+        if len(pcm) < int(rate * frame_ms / 1000) * 2:
+            frame_ms = 20 if len(pcm) >= int(rate * .02) * 2 else 10
+            n = int(rate * frame_ms / 1000) * 2
+            pcm = pcm + bytes(max(0, n - len(pcm)))
         n = int(rate * frame_ms / 1000) * 2   # int16 = 2 bytes
         for i in range(0, len(pcm) - n + 1, n):
             try:
@@ -203,6 +208,7 @@ class SttWorker(threading.Thread):
         self.gate = gate            # AudioGate: TTS 재생 중 입력 차단
         self.caption_events = caption_events
         self.speakers = speakers
+        self._spacing = KoreanSpacing() if C.STT_KOREAN_SPACING else None
         self._utterance_id = 0
         self._utterance_open = False
         self._gate_interrupted = threading.Event()
@@ -228,6 +234,8 @@ class SttWorker(threading.Thread):
         return open_decoder(self.backend)
 
     def _publish(self, kind, text, **attribution):
+        if self._spacing is not None and kind in ("partial", "final"):
+            text = self._spacing.format(text)
         if not self.caption_events:
             self.out.put((kind, text))
             return
@@ -242,6 +250,8 @@ class SttWorker(threading.Thread):
     def run(self):
         try:
             import sounddevice as sd
+            if self._spacing is not None:
+                self._spacing.prepare()
             decoder = self._decoder()
             router = (SpeakerAudioRouter(decoder, self._publish, self.speakers, C.AUDIO_RATE)
                       if self.speakers is not None else None)

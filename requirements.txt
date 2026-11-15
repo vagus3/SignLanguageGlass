@@ -36,6 +36,7 @@ soundfile==0.12.1
 vosk==0.3.44
 # 기본 STT 엔진. 스트리밍 Zipformer 한국어 모델을 onnx 로 실행합니다(자체 런타임 포함).
 sherpa-onnx==1.13.8
+kiwipiepy==0.24.1     # 한국어 자막 띄어쓰기 보정, 로컬 실행
 # webrtcvad 원본은 윈도우에서 컴파일이 필요합니다. wheels 배포판을 씁니다.
 webrtcvad-wheels==2.0.14
 

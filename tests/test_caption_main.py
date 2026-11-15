@@ -1,4 +1,4 @@
-"""Main app: mirrored click -> stable binding -> transcript -> face loss.
+"""Main app: automatic-only selection -> stable binding -> transcript -> face loss.
 
 Camera/STT queues and GUI input are simulated; real caption state and Korean
 renderers run. No webcam, microphone or native window is opened.
@@ -88,20 +88,20 @@ phase = [0]
 def wait_key(delay):
     step = phase[0]
     phase[0] += 1
-    mouse = callbacks["Signglass - captions"]
+    assert "Signglass - captions" not in callbacks
     key = -1
     if step == 0:
         assert rendered["track_id"] is None, "Multiple faces require selection"
         # Original x=150 becomes displayed x=489 in the mirrored image.
-        mouse(cv2.EVENT_LBUTTONDOWN, 489, 200, 0, None)
+        assert not rendered["manual"]
     elif step == 1:
-        assert rendered["manual"] and rendered["track_id"] == 1
+        assert not rendered["manual"] and rendered["track_id"] is None
         emit("partial", "내일", 1)
     elif step == 2:
-        assert rendered["caption_id"] == 1 and rendered["partial"]
-        mouse(cv2.EVENT_LBUTTONDOWN, 169, 200, 0, None)
+        assert rendered["caption_id"] is None and rendered["partial"]
+        assert not rendered["manual"]
     elif step == 3:
-        assert rendered["track_id"] == 2 and rendered["caption_id"] is None
+        assert rendered["track_id"] is None and rendered["caption_id"] is None
         emit("final", long_text, 1)
         key = ord("h")
     elif step == 4:
@@ -110,7 +110,7 @@ def wait_key(delay):
         emit("partial", "두 번째", 2)
         emit("final", "두 번째 문장입니다", 2)
     elif step == 5:
-        assert len(state["records"]) == 2 and state["records"][1].track_id == 2
+        assert len(state["records"]) == 2 and state["records"][1].track_id is None
         emit("final", "중복 결과", 2)
         emit("cancel", "", 1)
     elif step == 6:
@@ -121,9 +121,9 @@ def wait_key(delay):
         state["vision"].emit([])
         return -1
     elif step == 7:
-        assert rendered["track_id"] is None and rendered["manual"]
+        assert rendered["track_id"] is None and not rendered["manual"]
         emit("partial", "얼굴 없는 발화", 3)
-        mouse(cv2.EVENT_RBUTTONDOWN, 0, 0, 0, None)
+        assert "Signglass - captions" not in callbacks
         t[0] += 0.1
         state["vision"].emit([boxes[0]])
         return -1

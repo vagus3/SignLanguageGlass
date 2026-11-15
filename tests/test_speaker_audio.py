@@ -10,9 +10,9 @@ import numpy as np
 
 from src.active_speaker import SpeakerTimeline
 from src.caption_state import CaptionBook
-from src.face_tracker import FaceTrack
+from src.face_tracker import FaceTrack, FaceTracker
 from src.speaker_audio import AudioBlock, SpeakerAudioRouter
-from src.stt_worker import SttWorker
+from src.stt_worker import SttWorker, VoskDecoder
 from src import clock
 
 
@@ -41,6 +41,126 @@ class Vad:
 
 
 class AudioTests(unittest.TestCase):
+    def test_vosk_vad_recognizes_router_20ms_speech(self):
+        class SpeechVad:
+            def is_speech(self, pcm, rate):
+                self.length = len(pcm)
+                return True
+        vad = SpeechVad()
+        self.assertTrue(VoskDecoder._has_speech(vad, bytes(640), 16000))
+        self.assertEqual(vad.length, 640)
+
+    def test_vosk_vad_preserves_normal_30ms_frames(self):
+        class SpeechVad:
+            lengths = []
+            def is_speech(self, pcm, rate):
+                self.lengths.append(len(pcm))
+                return len(self.lengths) == 2
+        vad = SpeechVad()
+        self.assertTrue(VoskDecoder._has_speech(vad, bytes(8000), 16000))
+        self.assertEqual(vad.lengths, [960, 960])
+
+    def test_vosk_continuous_20ms_speech_does_not_trigger_silence_endpoint(self):
+        class Recognizer:
+            def AcceptWaveform(self, pcm):
+                return False
+            def PartialResult(self):
+                return '{"partial": "말"}'
+            def FinalResult(self):
+                return '{"text": "말"}'
+        decoder = VoskDecoder.__new__(VoskDecoder)
+        decoder.rate, decoder.rec = 16000, Recognizer()
+        decoder.vad = NS(is_speech=lambda pcm, rate: True)
+        decoder.last_partial, decoder.silence_ms = '', 0
+        with patch('config.STT_ENDPOINT_MS', 100):
+            events = [event for _ in range(10) for event in decoder.feed(bytes(640))]
+        self.assertEqual(events, [('partial', '말')])
+        self.assertEqual(decoder.silence_ms, 0)
+
+    def test_unowned_non_speech_is_not_carried_into_next_turn(self):
+        speakers = SpeakerTimeline()
+        speakers.select(FaceTrack(1, (0, 0, 100, 100), 10), 10, True)
+        speakers.select(FaceTrack(2, (0, 0, 100, 100), 10.02), 10.02, True)
+        decoder = Decoder()
+        router = SpeakerAudioRouter(decoder, lambda *args, **kwargs: None, speakers, vad=Vad())
+        router.feed([(bytes([100, 0]) * 320, 10, 10.02, False),
+                     (bytes([200, 0]) * 320, 10.02, 10.04, True)])
+        router.finish()
+        self.assertEqual(decoder.segments, [[200] * 320])
+
+    def test_silence_after_speech_reaches_decoder_for_endpoint(self):
+        speakers = SpeakerTimeline()
+        speakers.select(FaceTrack(1, (0, 0, 100, 100), 10), 10, True)
+        decoder = Decoder()
+        router = SpeakerAudioRouter(decoder, lambda *args, **kwargs: None, speakers, vad=Vad())
+        router.feed([(bytes([100, 0]) * 320, 10, 10.02, True),
+                     (bytes(640), 10.02, 10.04, False)])
+        router.finish()
+        self.assertEqual(decoder.segments, [[100] * 320 + [0] * 320])
+
+    def test_new_arrivals_keep_distinct_ids_audio_and_bubbles(self):
+        tracker, speakers = FaceTracker(), SpeakerTimeline()
+        a_box, b_box = (0, 0, 100, 100), (200, 0, 300, 100)
+        def frame(i, boxes, openings):
+            at = 10 + i / 30
+            tracker.update(boxes, (640, 480), at, openings)
+            speakers.observe(tracker.tracks(at), tracker.mouths, at)
+            return at
+        # A acquires focus before B enters.
+        for i in range(30):
+            frame(i, [a_box], [.02 if i % 2 else .06])
+        a_id = speakers.focus(10 + 29 / 30)
+        self.assertIsNotNone(a_id)
+        # Detector order changes when B enters; neither IDs nor focus may swap.
+        for i in range(30, 60):
+            frame(i, [b_box, a_box], [.02, .02 if i % 2 else .06])
+        b_id = next(t.track_id for t in tracker.tracks(10 + 59 / 30)
+                    if t.track_id != a_id)
+        self.assertEqual(speakers.focus(10 + 59 / 30), a_id)
+        self.assertNotEqual(a_id, b_id)
+        # A becomes quiet and B speaks, then both remain visible and quiet.
+        for i in range(60, 90):
+            frame(i, [a_box, b_box], [.02, .02 if i % 2 else .06])
+        for i in range(90, 105):
+            frame(i, [a_box, b_box], [.02, .02])
+        self.assertEqual(speakers.focus(10 + 104 / 30), b_id)
+        self.assertEqual(speakers.resolve(11.5), a_id)
+        self.assertEqual(speakers.resolve(12.7), b_id)
+        worker = SttWorker(queue.Queue(), caption_events=True)
+        decoder = Decoder()
+        router = SpeakerAudioRouter(decoder, worker._publish, speakers, vad=Vad())
+        router.feed([(np.full(320, 100, np.int16).tobytes(), 11.5, 11.52, True),
+                     (np.full(320, 200, np.int16).tobytes(), 12.7, 12.72, True)])
+        router.finish()
+        book, finals = CaptionBook(), []
+        while not worker.out.empty():
+            _, event = worker.out.get_nowait()
+            book.update(event, speakers.face_at(event.speaker_id, event.audio_end))
+            if event.kind == 'final':
+                finals.append(event)
+        self.assertEqual([e.speaker_id for e in finals], [a_id, b_id])
+        self.assertEqual([e.text for e in finals], ['A입니다', 'B입니다'])
+        self.assertEqual(decoder.segments, [[100] * 320, [200] * 320])
+        self.assertEqual({s.track_id for s in book.visible_states(finals[-1].observed_at)},
+                         {a_id, b_id})
+        # B leaves long enough to expire. C entering the same position gets a new ID.
+        for i in range(105, 126):
+            frame(i, [a_box], [.02])
+        self.assertIsNone(speakers.focus(10 + 125 / 30))
+        at = frame(126, [a_box, b_box], [.02, .02])
+        c_id = next(t.track_id for t in tracker.tracks(at) if t.track_id != a_id)
+        self.assertNotIn(c_id, (a_id, b_id))
+        self.assertIsNone(speakers.focus(at))
+        for i in range(127, 151):
+            at = frame(i, [a_box, b_box], [.02, .02 if i % 2 else .06])
+        self.assertEqual(speakers.focus(at), c_id)
+        # C cannot move the existing B caption anchor to its new ID.
+        b_state = next(s for s in book.states.values() if s.track_id == b_id)
+        old_anchor = b_state.held
+        c_track = next(t for t in tracker.tracks(at) if t.track_id == c_id)
+        self.assertEqual(b_state.anchor(c_track, finals[-1].observed_at).track_id, b_id)
+        self.assertEqual(b_state.held, old_anchor)
+
     def test_adc_time_is_converted_to_application_clock(self):
         timing = NS(currentTime=500.5, inputBufferAdcTime=500.2)
         block = AudioBlock.capture(bytes(8000), 16000, timing, 100.5, 1)
