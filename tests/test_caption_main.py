@@ -146,7 +146,7 @@ def wait_key(delay):
 
 output = io.StringIO()
 with patch.object(sys, "argv", ["main.py", "--no-sign", "--no-tts", "--display", "null",
-                                "--video-captions"]), \
+                                "--video-captions", "--no-auto-speaker"]), \
         patch.object(C, "MIRROR_PREVIEW", True), \
         patch("src.clock.now", lambda: t[0]), \
         patch.object(main, "VisionThread", Vision), \
@@ -180,7 +180,7 @@ def quit_after_fallback(delay):
 
 
 with patch.object(sys, "argv", ["main.py", "--no-sign", "--no-tts", "--display", "null",
-                                "--video-captions", "--transcript"]), \
+                                "--video-captions", "--transcript", "--no-auto-speaker"]), \
         patch("src.clock.now", lambda: t[0]), \
         patch.object(main, "VisionThread", BadVision), \
         patch("src.stt_worker.SttWorker", AvailableStt), \

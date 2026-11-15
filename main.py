@@ -64,7 +64,8 @@ def draw_segment_overlay(cv2, frame, recorder, segmenter):
 class VisionThread(threading.Thread):
     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
                  segment_recorder=None, pose_3d=False, segmenter=None, segment_events=None,
-                 track_face=True, preview_hands=False, predictor=None, word_events=None):
+                 track_face=True, preview_hands=False, predictor=None, word_events=None,
+                 track_mouths=False):
         # daemon 을 클래스 속성으로 두면 Thread.daemon 프로퍼티를 가려서
         # 내부 _daemonic 플래그와 어긋납니다. 생성자로 넘겨야 안전합니다.
         super().__init__(name="vision", daemon=True)
@@ -78,6 +79,7 @@ class VisionThread(threading.Thread):
         self.pose_3d = pose_3d
         self.segmenter, self.segment_events = segmenter, segment_events
         self.track_face = track_face    # 고정 자막·전방 얼굴 카메라면 계산할 필요가 없습니다
+        self.track_mouths = track_mouths
         from src.latency import NullTracker
         self.stats = stats or NullTracker()
         # ★ 이름을 _stop 으로 두면 안 됩니다.
@@ -111,9 +113,13 @@ class VisionThread(threading.Thread):
             hand_detector = (L.make_preview_hands()
                              if self.preview_hands and holistic is None else None)
             if self.track_face:
-                import mediapipe as mp
-                face_detector = mp.solutions.face_detection.FaceDetection(
-                    model_selection=0, min_detection_confidence=0.5)
+                if self.track_mouths:
+                    from src.face_activity import MouthDetector
+                    face_detector = MouthDetector()
+                else:
+                    import mediapipe as mp
+                    face_detector = mp.solutions.face_detection.FaceDetection(
+                        model_selection=0, min_detection_confidence=0.5)
 
             predictor = self.predictor
             if self.enable_sign:
@@ -149,8 +155,14 @@ class VisionThread(threading.Thread):
                     st.add("hand_preview", (clock.now() - t_preview) * 1000)
 
                 t_face = clock.now()
-                face_boxes = (L.detection_face_boxes_px(face_detector.process(rgb), w, h)
-                              if face_detector is not None else [])
+                face_boxes, mouth_openings = [], []
+                if face_detector is not None:
+                    face_result = face_detector.process(rgb)
+                    if self.track_mouths:
+                        from src.face_activity import mesh_observations
+                        face_boxes, mouth_openings = mesh_observations(face_result, w, h)
+                    else:
+                        face_boxes = L.detection_face_boxes_px(face_result, w, h)
                 if face_detector is not None:
                     st.add("face_detection", (clock.now() - t_face) * 1000)
                 self.ms_vision = (clock.now() - t0) * 1000
@@ -200,6 +212,7 @@ class VisionThread(threading.Thread):
                 self._emit(("frame", {
                     "frame": frame, "face": face,
                     "face_boxes": face_boxes, "captured_at": t_cap,
+                    "mouth_openings": mouth_openings,
                     "hand_count": (len(getattr(hand_res, "multi_hand_landmarks", None) or [])
                                    if hand_detector is not None else
                                    sum(bool(getattr(res, name, None)) for name in
@@ -240,10 +253,11 @@ class VisionThread(threading.Thread):
 class FaceThread(threading.Thread):
     """선택형 전방 카메라 얼굴 추적. 수어 카메라와 시야를 분리합니다."""
 
-    def __init__(self, out_q, camera_index):
+    def __init__(self, out_q, camera_index, track_mouths=False):
         super().__init__(name="face", daemon=True)
         self.out = out_q
         self.camera_index = camera_index
+        self.track_mouths = track_mouths
         self._quit = threading.Event()
 
     def stop(self):
@@ -262,8 +276,12 @@ class FaceThread(threading.Thread):
         detector = None
         smooth = OneEuroPoint(C.FILTER_MIN_CUTOFF, C.FILTER_BETA)
         try:
-            detector = mp.solutions.face_detection.FaceDetection(
-                model_selection=0, min_detection_confidence=0.5)
+            if self.track_mouths:
+                from src.face_activity import MouthDetector
+                detector = MouthDetector()
+            else:
+                detector = mp.solutions.face_detection.FaceDetection(
+                    model_selection=0, min_detection_confidence=0.5)
             while not self._quit.is_set():
                 ok, frame = cap.read()
                 if not ok:
@@ -273,13 +291,22 @@ class FaceThread(threading.Thread):
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 rgb.flags.writeable = False
                 res = detector.process(rgb)
-                face = L.detection_face_center_px(res, w, h)
+                mouth_openings = []
+                if self.track_mouths:
+                    from src.face_activity import mesh_observations
+                    face_boxes, mouth_openings = mesh_observations(res, w, h)
+                    face = (((face_boxes[0][0] + face_boxes[0][2]) / 2,
+                             (face_boxes[0][1] + face_boxes[0][3]) / 2)
+                            if len(face_boxes) == 1 else None)
+                else:
+                    face_boxes = L.detection_face_boxes_px(res, w, h)
+                    face = L.detection_face_center_px(res, w, h)
                 if face:
                     face = smooth(face[0], face[1], clock.now())
                 else:
                     smooth.reset()
                 self._emit(("face", {"face": face, "size": (w, h), "frame": frame,
-                                     "face_boxes": L.detection_face_boxes_px(res, w, h),
+                                     "face_boxes": face_boxes, "mouth_openings": mouth_openings,
                                      "captured_at": captured_at}))
         except Exception as e:
             self._emit(("error", str(e)))
@@ -327,24 +354,29 @@ def main():
                     metavar="TEXT", help="카메라·수어 모델 없이 실제 TTS 재생 경로만 검사")
     ap.add_argument("--sign-model", metavar="PATH", help="local 단어 인식 모델 경로")
     ap.add_argument("--sign-labels", metavar="PATH", help="local 모델의 labels.json 경로")
-    ap.add_argument("--sign-backend", choices=["local", "cloud"], default="local",
-                    help="기존 ONNX 단어 인식 또는 서버의 연속 수어 번역")
+    ap.add_argument("--sign-backend", choices=["local", "cloud", "device"], default="local",
+                    help="local=LSTM 단어 인식, cloud=서버 문장 번역, device=CTC 단어를 바로 발화")
+    ap.add_argument("--sign-mapping", metavar="PATH",
+                    help="device: 글로스 ID를 한국어 뜻으로 바꾸는 JSON (한글 단어 라벨이면 생략)")
     ap.add_argument("--cloud-controls", choices=["keyboard", "stdin"], default="keyboard",
-                    help="cloud: SPACE/c 또는 표준입력 start/stop/cancel로 문장 구간 지정")
+                    help="cloud/device: SPACE/c 또는 표준입력 start/stop/cancel로 수어 구간 지정")
     ap.add_argument("--pose-3d", action="store_true",
-                    help="cloud: 3D 좌표도 전송 (서버가 --features 3d 체크포인트일 때)")
+                    help="cloud/device: 3D 좌표도 사용 (3D 모델일 때)")
     ap.add_argument("--recognize", choices=["server", "device"], default="server",
                     help="cloud: server=좌표를 보내 서버가 인식(기준선 A), "
                          "device=이 기기에서 ONNX로 인식해 글로스만 전송(비교 경로 B)")
     ap.add_argument("--onnx", metavar="PATH",
-                    help="--recognize device 의 CTC ONNX (tools/export_ctc_onnx.py 결과)")
+                    help="--sign-backend device 또는 --recognize device 의 CTC ONNX")
     ap.add_argument("--auto-segment", action="store_true",
-                    help="cloud: 손 움직임으로 문장 구간 자동 시작/종료 (SPACE도 계속 사용 가능)")
+                    help="cloud/device: 손 움직임으로 수어 구간 자동 시작/종료 (SPACE도 사용 가능)")
     ap.add_argument("--viewpoint", choices=["webcam", "glasses"], default=C.SIGN_VIEWPOINT,
                     help="수어 카메라 시점: webcam=노트북 정면(손을 내리면 문장 끝), "
                          "glasses=안경 1인칭")
     ap.add_argument("--fixed-caption", action="store_true",
                     help="얼굴 추적 없이 HUD 하단 고정 자막 (카메라 불필요)")
+    ap.add_argument("--auto-speaker", action=argparse.BooleanOptionalAction,
+                    default=C.AUTO_SPEAKER,
+                    help="입 움직임과 음성 시각으로 교대 화자 자동 선택 (기본 활성화)")
     ap.add_argument("--sign-camera", type=int, default=None, metavar="INDEX",
                     help="수어/기본 카메라 번호 (기본: config.CAM_INDEX)")
     ap.add_argument("--face-camera", type=int, default=None, metavar="INDEX",
@@ -379,8 +411,10 @@ def main():
         value = getattr(a, name)
         if value is not None and not math.isfinite(value):
             ap.error(f"--{name} 에는 유한한 숫자가 필요합니다")
-    if a.recognize == "device" and not a.onnx:
-        ap.error("--recognize device 에는 --onnx 가 필요합니다")
+    if (a.sign_backend == "device" or a.recognize == "device") and not a.onnx:
+        ap.error("--sign-backend device / --recognize device 에는 --onnx 가 필요합니다")
+    if a.sign_mapping and (a.sign_backend != "device" or a.no_sign):
+        ap.error("--sign-mapping 은 --sign-backend device 에서만 사용합니다")
     # 스레드 시작 전에 공용 설정에 반영해 두 카메라 및 재연결에도 적용합니다.
     if a.exposure is not None or a.gain is not None:
         C.CAM_MANUAL_EXPOSURE = True
@@ -388,15 +422,15 @@ def main():
         C.CAM_EXPOSURE = a.exposure
     if a.gain is not None:
         C.CAM_GAIN = a.gain
-    keyboard_cloud = (a.sign_backend == "cloud" and not a.no_sign
-                      and a.cloud_controls == "keyboard")
+    keyboard_segments = (a.sign_backend in ("cloud", "device") and not a.no_sign
+                         and a.cloud_controls == "keyboard")
 
     import cv2
     from src.hud import HudContent, HudRenderer, load_calib
     from src.oled_bridge import make_display
     from src.predictor import PhraseBuilder
     from src.audio_gate import AudioGate, NullGate
-    from src.caption_state import CaptionState
+    from src.caption_state import CaptionBook, CaptionState
     from src.face_tracker import FaceTracker
     from src.caption_history import CaptionHistory
 
@@ -421,22 +455,37 @@ def main():
     # 스피커 출력이 마이크로 되돌아오는 에코 루프를 막는 게이트.
     # 유선 이어폰으로 들을 때는 --no-gate 로 꺼도 됩니다.
     gate = NullGate() if a.no_gate else AudioGate(C.AUDIO_GATE_TAIL_SEC)
+    speakers = None
+    if a.auto_speaker and not a.fixed_caption and not a.no_stt:
+        from src.active_speaker import SpeakerTimeline
+        speakers = SpeakerTimeline(C.SPEAKER_CONFIRM_SEC, C.SPEAKER_HOLD_SEC,
+                                   C.SPEAKER_MOTION_THRESHOLD, C.SPEAKER_DOMINANCE,
+                                   max_age=C.FACE_LOST_SEC)
+        print("[화자] 입 움직임·음성 시간 기반 자동 전환. 클릭=수동 잠금, 우클릭=자동")
+    caption_book = (CaptionBook(C.CAPTION_HOLD_SEC, C.CAPTION_PARTIAL_TIMEOUT, C.FACE_LOST_SEC)
+                    if speakers is not None else None)
 
     cloud = recorder = segmenter = controller = None
     commands = queue.Queue()
-    if a.sign_backend == "cloud" and not a.no_sign:
+    if a.sign_backend in ("cloud", "device") and not a.no_sign:
         from src.cloud_sign import CloudClient, CloudWorker, GlossClient, SegmentRecorder
         try:
-            if a.recognize == "device":
+            if a.sign_backend == "device" or a.recognize == "device":
                 from src.ctc_runtime import OnnxRecognizer
                 from src.pose_sequence import needs_world
                 device = OnnxRecognizer(a.onnx)
                 if needs_world(device.feature_set) != a.pose_3d:
                     ap.error(f"{a.onnx} 는 {device.feature_set} 특징입니다. "
                              f"--pose-3d 는 3D 모델과만 같이 씁니다")
-                client = GlossClient(device)
-                print(f"[cloud] 기기 인식(B): {device.feature_set}, "
-                      f"{len(device.labels) - 1}개 글로스, 서버에는 글로스만 보냅니다")
+                if a.sign_backend == "device":
+                    from src.device_sign import DeviceSignClient
+                    client = DeviceSignClient(device, mapping=a.sign_mapping)
+                    print(f"[수어] 기기 인식 → 단어 발화: {len(device.labels) - 1}개 단어, "
+                          f"신뢰도 기준={client.threshold:.2f}. 문장 번역 없이 단어를 읽습니다.")
+                else:
+                    client = GlossClient(device)
+                    print(f"[cloud] 기기 인식(B): {device.feature_set}, "
+                          f"{len(device.labels) - 1}개 글로스, 서버에는 글로스만 보냅니다")
             else:
                 client = CloudClient()
             cloud = CloudWorker(client, stats=stats)
@@ -453,7 +502,9 @@ def main():
                 for line in sys.stdin:
                     commands.put(line.strip().lower())
             threading.Thread(target=read_commands, daemon=True, name="cloud-controls").start()
-            print("[cloud] start / stop / cancel / quit 입력")
+            print("[수어] start / stop / cancel / quit 입력")
+        elif a.sign_backend == "device":
+            print("[수어] SPACE=수어 시작/종료, c=취소. 인식된 단어를 스피커로 출력합니다.")
         else:
             print("[cloud] SPACE=문장 시작/종료, c=취소. 자동 발화는 서버 검증 후 활성화됩니다.")
 
@@ -469,13 +520,15 @@ def main():
                            camera_index=sign_index, segment_recorder=recorder,
                            pose_3d=a.pose_3d, segmenter=segmenter, segment_events=commands,
                            track_face=not a.fixed_caption and not separate_face,
-                           preview_hands=a.debug, predictor=predictor, word_events=word_events)
+                           preview_hands=a.debug, predictor=predictor, word_events=word_events,
+                           track_mouths=speakers is not None)
               if need_vision else None)
     if vision:
         vision.start()
 
     fq = queue.Queue(maxsize=1) if separate_face else None
-    face_thread = FaceThread(fq, a.face_camera) if separate_face else None
+    face_thread = (FaceThread(fq, a.face_camera, track_mouths=speakers is not None)
+                   if separate_face else None)
     if face_thread:
         face_thread.start()
 
@@ -484,7 +537,8 @@ def main():
     if not a.no_stt:
         from src.stt_worker import SttWorker
         sq = queue.Queue()
-        stt = SttWorker(sq, gate=gate, backend=a.stt, caption_events=True)
+        stt = SttWorker(sq, gate=gate, backend=a.stt, caption_events=True,
+                        **({"speakers": speakers} if speakers is not None else {}))
         stt.start()
 
     tts = None
@@ -511,8 +565,8 @@ def main():
     # SPACE/c need one focused OpenCV window. The caption, HUD or transcript window is
     # enough; only without them open the debug camera view (one more full-size imshow
     # per frame, which a slow laptop feels).
-    if keyboard_cloud and not (video_enabled or a.transcript
-                               or getattr(display, "has_window", False)):
+    if keyboard_segments and not (video_enabled or a.transcript
+                                  or getattr(display, "has_window", False)):
         a.debug = True
     camera_frame = None
     black = None
@@ -528,7 +582,8 @@ def main():
     phrase = PhraseBuilder()
     if cloud is not None:
         from src.cloud_control import CloudController
-        controller = CloudController(cloud, recorder, content, tts=tts, stats=stats)
+        controller = CloudController(cloud, recorder, content, tts=tts, stats=stats,
+                                     backend=a.sign_backend)
 
     pending_word_t = 0.0        # 아직 발화 안 된 단어가 확정된 시각
     last_sign_log = float("-inf")
@@ -549,6 +604,19 @@ def main():
                 delta -= 0x10000
             if delta:
                 mouse_actions.put(("scroll", 3 if delta > 0 else -3, 0))
+
+    def observe_faces(payload):
+        captured = payload.get("captured_at", clock.now())
+        faces.update(payload.get("face_boxes", []), payload["size"], captured,
+                     payload.get("mouth_openings", ()))
+        if speakers is not None:
+            speakers.observe(faces.tracks(captured), faces.mouths, captured,
+                             manual=faces.manual, selected_id=faces.selected_id)
+
+    def lose_faces():
+        faces.clear()
+        if speakers is not None:
+            speakers.invalidate(clock.now())
 
     print("실행 중. " + ("q 로 종료." if has_window else "Ctrl+C 로 종료."))
 
@@ -581,20 +649,19 @@ def main():
                     content.status("카메라/수어 처리 오류: 터미널을 확인하세요")
                     vq = None
                     if face_thread is None:
-                        faces.clear()
+                        lose_faces()
                         camera_frame_at = float("-inf")
                     continue
                 if face_thread is None:
                     last_face = payload["face"]
                     last_size = payload["size"]
-                    faces.update(payload.get("face_boxes", []), last_size,
-                                 payload.get("captured_at", clock.now()))
+                    observe_faces(payload)
                     camera_frame = payload["frame"]
                     camera_frame_at = payload.get("captured_at", clock.now())
                 if a.debug:
                     if not a.no_sign and clock.now() - last_sign_log >= 2:
                         last_sign_log = clock.now()
-                        state = (f"클라우드 구간={'녹화 중' if recorder.active else '대기'}"
+                        state = (f"수어 구간={'녹화 중' if recorder.active else '대기'}"
                                  if recorder is not None else
                                  f"후보={payload['raw']} 신뢰도={payload['conf']:.2f} "
                                  f"(확정 기준={C.CONF_THRESHOLD:.2f})")
@@ -630,15 +697,14 @@ def main():
                         print("[face]", payload, "-> 고정 자막으로 계속합니다")
                         fq = None
                         last_face = None
-                        faces.clear()
+                        lose_faces()
                         # Keep the last image only as a background; never keep
                         # a stale person visible when the camera has failed.
                         if camera_frame is not None:
                             camera_frame = camera_frame * 0
                     else:
                         last_face, last_size = payload["face"], payload["size"]
-                        faces.update(payload.get("face_boxes", []), last_size,
-                                     payload.get("captured_at", clock.now()))
+                        observe_faces(payload)
                         camera_frame = payload["frame"]
                         camera_frame_at = payload.get("captured_at", clock.now())
                         if a.debug:
@@ -659,13 +725,22 @@ def main():
                 now = clock.now()
                 if action == "auto":
                     faces.automatic(now)
-                    captions.release_anchor()
+                    if speakers is not None:
+                        speakers.select(None, now, manual=False)
+                    else:
+                        captions.release_anchor()
                 elif now - camera_frame_at <= C.FACE_LOST_SEC and not a.fixed_caption:
                     if C.MIRROR_PREVIEW and not separate_face:
                         x = last_size[0] - 1 - x
                     if faces.select_at(x, y, now):
-                        captions.release_anchor()
+                        if speakers is not None:
+                            speakers.select(faces.current(now), now, manual=True)
+                        else:
+                            captions.release_anchor()
                         print(f"[caption] 대상 {faces.selected_id} 선택: 다음 발화부터 적용")
+
+            if speakers is not None and not faces.manual:
+                faces.selected_id = speakers.focus(clock.now())
 
             # 조합 대기가 끝난 단어를 흘려보냅니다 (이중 발화 방지의 나머지 절반)
             pend = phrase.poll()
@@ -687,15 +762,33 @@ def main():
                     kind, event = sq.get_nowait()
                     if kind == "error":
                         print("[stt]", event)
-                        captions.text = ""
+                        if caption_book is not None:
+                            caption_book.cancel_partials(clock.now())
+                        else:
+                            captions.text = ""
                         sq = None
                         break
-                    observed_face = None if a.fixed_caption else faces.at(event.observed_at)
-                    accepted = captions.update(event, observed_face)
+                    if caption_book is not None:
+                        if event.speaker_resolved:
+                            observed_face = next((t for t in faces.tracks(clock.now())
+                                                  if t.track_id == event.speaker_id), None)
+                            if observed_face is None and event.audio_end is not None:
+                                observed_face = speakers.face_at(event.speaker_id, event.audio_end)
+                        else:
+                            observed_face = faces.at(event.observed_at)
+                        accepted_state = caption_book.update(event, observed_face)
+                        accepted = accepted_state is not None
+                        captions = caption_book.latest
+                    else:
+                        observed_face = None if a.fixed_caption else faces.at(event.observed_at)
+                        accepted = captions.update(event, observed_face)
                     if kind == "final" and accepted:
-                        track = None if a.fixed_caption else faces.current(clock.now())
-                        anchor = captions.anchor(track, clock.now())
-                        history.append(event, anchor.track_id if anchor else None)
+                        if caption_book is not None:
+                            history.append(event, accepted_state.track_id)
+                        else:
+                            track = None if a.fixed_caption else faces.current(clock.now())
+                            anchor = captions.anchor(track, clock.now())
+                            history.append(event, anchor.track_id if anchor else None)
                         print(f"[음성] {event.text}")
 
             # ---- HUD ----
@@ -733,7 +826,10 @@ def main():
                         video = overlay.render(background, captions, track, now,
                                                mirror=C.MIRROR_PREVIEW and not separate_face,
                                                tracks=faces.tracks(now), manual=faces.manual,
-                                               selected_id=faces.selected_id)
+                                               selected_id=faces.selected_id,
+                                               **({"captions": caption_book.visible_states(now),
+                                                   "speaker_mode": True}
+                                                  if caption_book is not None else {}))
                     if recorder is not None and not a.debug:
                         draw_segment_overlay(cv2, video, recorder, segmenter)
                     if not gate.is_open():

@@ -16,8 +16,9 @@ READY = "수어 입력 대기"
 
 
 class CloudController:
-    def __init__(self, cloud, recorder, hud, *, tts=None, stats=None, out=print):
+    def __init__(self, cloud, recorder, hud, *, tts=None, stats=None, out=print, backend="cloud"):
         self.cloud, self.recorder, self.hud = cloud, recorder, hud
+        self.backend = backend
         self.tts, self.stats, self.out = tts, stats or NullTracker(), out
         self.hud.status(READY)
 
@@ -48,7 +49,7 @@ class CloudController:
             try:
                 sequence, origin_t = self.recorder.finish()
                 if self.cloud.submit(sequence, origin_t):
-                    self.hud.status("수어 번역 중")
+                    self.hud.status("수어 인식 중" if self.backend == "device" else "수어 번역 중")
             except ValueError as e:
                 self.hud.status("수어를 다시 입력하세요")
                 self.out("[cloud] 구간 취소:", e)
@@ -64,7 +65,7 @@ class CloudController:
         status = result["status"]
         if status == "ok":
             text = result["text"]
-            self.out("[cloud 번역]", text)
+            self.out("[수어]" if self.backend == "device" else "[cloud 번역]", text)
             self.hud.own(text)
             self.hud.status(READY)
             self.stats.since("cloud_response", origin_t)
@@ -72,7 +73,9 @@ class CloudController:
                 if self.tts:
                     self.tts.say(text, origin_t=origin_t)
             else:
-                self.out("[cloud] 미검증/모의 결과: 텍스트만 표시합니다.")
+                reason = ("모의 번역(--mock-language/--mock)" if result.get("mock")
+                          else "자동 발화 검증이 없는 결과")
+                self.out(f"[cloud] {reason}: 텍스트만 표시합니다.")
         elif status == "fallback":
             # Sentence generation failed: a preview for the signer, never spoken.
             text = result["text"]
@@ -84,4 +87,7 @@ class CloudController:
             if result.get("error"):
                 # 409: the server's --device-model is another model; 401: token; 429: busy.
                 self.out("[cloud] 요청 실패:", result["error"])
-            self.hud.status(STATUS_TEXT.get(status, ""))
+            message = STATUS_TEXT.get(status, "")
+            if self.backend == "device" and status == "unavailable":
+                message = "수어 인식 오류: 터미널을 확인하세요"
+            self.hud.status(message)
