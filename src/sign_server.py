@@ -159,10 +159,11 @@ class MockDeviceModel:
 class TranslationService:
     def __init__(self, recognizer=None, translator=None, mapping=None, *, mock=False,
                  ttl=300, cache_size=1024, max_waiters=8, clock=time.monotonic,
-                 device_model=None):
+                 device_model=None, allow_uncalibrated_speech=False):
         self.recognizer = recognizer
         self.device_model = device_model
         self.translator = translator
+        self.allow_uncalibrated_speech = bool(allow_uncalibrated_speech)
         self.glossary = Glossary.from_mapping(mapping)
         self.mock = mock
         self.clock, self.ttl, self.cache_size = clock, ttl, cache_size
@@ -184,6 +185,8 @@ class TranslationService:
     def _speech_allowed(self, recognizer):
         if self.mock or recognizer is None or self.translator is None:
             return False
+        if self.allow_uncalibrated_speech and recognizer is self.device_model:
+            return True
         policy = recognizer.calibration
         return bool(policy.get("enabled") is True
                     and policy.get("mapping_hash") == self.glossary.policy_hash()
@@ -416,6 +419,9 @@ def main():
     p.add_argument("--mock-language", action="store_true",
                    help="real recognizers with the mock composer: latency measurement only, "
                         "results are marked mock and never spoken")
+    p.add_argument("--allow-uncalibrated-speech", action="store_true",
+                   help="demo override: speak successful device-model translations without "
+                        "a validated speech calibration; mock and fallback results stay silent")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)
     args = p.parse_args()
@@ -440,7 +446,8 @@ def main():
             recognizer = Recognizer(args.checkpoint)
         translator = MockTranslator() if args.mock_language else VllmTranslator()
         service = TranslationService(recognizer, translator, glossary, mock=args.mock_language,
-                                     device_model=device_model)
+                                     device_model=device_model,
+                                     allow_uncalibrated_speech=args.allow_uncalibrated_speech)
     import uvicorn
     uvicorn.run(create_app(service), host=args.host, port=args.port)
 

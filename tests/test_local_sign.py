@@ -57,18 +57,23 @@ def run(client, seq=None):
 # Seen as-is and in the list: the reviewed sentence, not marked as a guess.
 result = run(client)
 assert (result["status"], result["text"], result["source"]) == ("ok", "목이 아파요.", "phrase")
-assert result["auto_speech"] is False
+# score = the weakest word's probability (0.4995 here): below the default 0.5, shown only.
+assert result["auto_speech"] is False and result["speech"] == "목이 아파요."
+assert run(LocalSignClient(Recognizer(unsure), phrases, bonus=0.2, speak_min=0.4))["auto_speech"]
 # What the other person just said tips a near-tie; the result is marked as a guess.
 client.hear("어디 아프세요?", at=100.0)
 assert client.heard(now=110.0) and not client.heard(now=121.0), "context expires"
 client.hear("어디 아프세요?")
 result = run(client)
 assert result["text"] == GUESS + "머리가 아파요." and result["glosses"] == ["머리", "아프다"]
+assert result["speech"] == "머리가 아파요.", "the guess mark is shown, never spoken"
 # Not in the list: the recognized words, without variant numbers.
 clear = [[.01, .01, .01, .01, .96], [.9, .03, .03, .04, .001], [.01, .01, .01, .96, .01],
          [.9, .03, .03, .04, .001], [.9, .03, .03, .04, .001]]
 result = run(LocalSignClient(Recognizer(clear), phrases))
 assert (result["text"], result["source"]) == ("검사 아프다", "words")
+assert result["auto_speech"] and result["speech"] == "검사 아프다", "clear signs are spoken"
+assert not run(LocalSignClient(Recognizer(clear), phrases, speak_min=1.01))["auto_speech"], "off"
 # No hands, or nothing recognized: no text at all.
 assert run(client, sequence(hands=False))["status"] == "no_sign"
 silent = LocalSignClient(Recognizer([[.97, .01, .01, .01, .001]] * 5), phrases)
@@ -77,7 +82,17 @@ assert run(silent) ["status"] == "no_sign"
 weak = Recognizer(unsure)
 weak.calibration = {"threshold": 0.9}
 result = run(LocalSignClient(weak, phrases, bonus=0))
-assert result["status"] == "uncertain" and result["text"] == ""
+assert result["status"] == "uncertain" and result["text"] == "" and not result["auto_speech"]
 
 print("[OK] Local sign client: phrase list, context from speech, guess marking, "
       "words fallback, no-sign and threshold")
+
+# --save-segments: each recognized segment and its result are kept for diagnosis.
+import tempfile
+with tempfile.TemporaryDirectory() as td:
+    keeper = LocalSignClient(Recognizer(clear), save_dir=td)
+    keeper.payload(sequence(), "s", 3)
+    from pathlib import Path as _P
+    saved = sorted(p.name for p in _P(td).iterdir())
+    assert saved == ["s_0003.json", "s_0003.npz"], saved
+print("[OK] segments saved for diagnosis")

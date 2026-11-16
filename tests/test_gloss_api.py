@@ -118,6 +118,22 @@ with tempfile.TemporaryDirectory() as td:
     assert response.status_code == 200 and response.json()["status"] == "unavailable"
     mock = TranslationService(None, MockTranslator(), glossary, mock=True, device_model=device_model)
     assert not mock.device_speech_enabled
+    uncalibrated = DeviceModel(td / "ctc.onnx")
+    uncalibrated.calibration = {}
+    demo_speech = TranslationService(None, MockTranslator(), glossary,
+                                     device_model=uncalibrated,
+                                     allow_uncalibrated_speech=True)
+    assert demo_speech.device_speech_enabled and not demo_speech.speech_enabled
+    demo_api = TestClient(create_app(demo_speech, token=""))
+    demo_result = demo_api.post("/v1/sign/compose", json={
+        "version": GLOSS_VERSION, "session_id": "demo-speech", "segment_id": "ok",
+        "glosses": ["G1"], "score": .9,
+        "recognizer": uncalibrated.metadata["model_id"]}).json()
+    assert demo_result["status"] == "ok" and demo_result["auto_speech"]
+    mock_override = TranslationService(None, MockTranslator(), glossary, mock=True,
+                                       device_model=uncalibrated,
+                                       allow_uncalibrated_speech=True)
+    assert not mock_override.device_speech_enabled
     try:
         GlossClient(type("NoId", (), {"metadata": {}})())
         raise AssertionError("A device model without model_id was accepted")

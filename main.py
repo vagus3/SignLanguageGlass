@@ -17,6 +17,7 @@
 지연을 만드는 최대 원인은 큐에 프레임이 쌓이는 것입니다.
 그래서 비전 프레임 큐는 maxsize=1이고, 오디오 큐도 짧게 제한합니다.
 """
+import json
 import sys
 import time
 import queue
@@ -76,7 +77,8 @@ def emit_latest(out_q, item):
 class VisionThread(threading.Thread):
     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
                  segment_recorder=None, pose_3d=False, segmenter=None, segment_events=None,
-                 track_face=True, preview_hands=False, predictor=None, word_events=None):
+                 track_face=True, preview_hands=False, predictor=None, word_events=None,
+                 hands_only=False, show_landmarks=False):
         # daemon 을 클래스 속성으로 두면 Thread.daemon 프로퍼티를 가려서
         # 내부 _daemonic 플래그와 어긋납니다. 생성자로 넘겨야 안전합니다.
         super().__init__(name="vision", daemon=True)
@@ -85,6 +87,9 @@ class VisionThread(threading.Thread):
         self.predictor = predictor
         self.word_events = word_events if word_events is not None else queue.Queue()
         self.preview_hands = preview_hands
+        self.show_landmarks = show_landmarks
+        # 안경 시점: 얼굴·어깨가 안 보이므로 Holistic 대신 손만 찾습니다 (src/glasses_hands.py).
+        self.hands_only = hands_only
         self.camera_index = camera_index
         self.segment_recorder = segment_recorder
         self.pose_3d = pose_3d
@@ -114,10 +119,14 @@ class VisionThread(threading.Thread):
             self.out.put(("error", "카메라를 열 수 없습니다"))
             return
 
-        holistic = face_detector = hand_detector = None
+        holistic = face_detector = hand_detector = glasses = None
         try:
+            if self.hands_only and self.segment_recorder is not None:
+                from src.glasses_hands import GlassesHands
+                glasses = GlassesHands()
             holistic = (L.make_holistic(C.MODEL_COMPLEXITY)
-                        if self.enable_sign or self.segment_recorder is not None else None)
+                        if (self.enable_sign or self.segment_recorder is not None)
+                        and glasses is None else None)
             hand_detector = L.make_preview_hands() if self.preview_hands else None
             if self.track_face:
                 import mediapipe as mp
@@ -147,6 +156,8 @@ class VisionThread(threading.Thread):
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 rgb.flags.writeable = False
                 res = holistic.process(rgb) if holistic is not None else None
+                if self.show_landmarks and res is not None:
+                    L.draw_debug(frame, res, include_pose=False)
                 t_hol = clock.now()
                 if holistic is not None:
                     st.add("holistic", (t_hol - t_cap) * 1000)
@@ -165,8 +176,15 @@ class VisionThread(threading.Thread):
 
                 # Capture every processed frame before the lossy preview queue.
                 if self.segment_recorder is not None:
-                    points, mask = from_mediapipe(res)
-                    world = world_from_mediapipe(res, (w, h)) if self.pose_3d else (None, None)
+                    if glasses is not None:
+                        t_hands = clock.now()
+                        points, mask, hand_res = glasses.process(rgb)
+                        st.add("hands", (clock.now() - t_hands) * 1000)
+                        L.draw_hand_preview(frame, hand_res)
+                        world = (None, None)
+                    else:
+                        points, mask = from_mediapipe(res)
+                        world = world_from_mediapipe(res, (w, h)) if self.pose_3d else (None, None)
                     self.segment_recorder.add(points, mask, t_cap, (w, h), *world)
                     if self.segmenter is not None:
                         event = self.segmenter.update(points, mask, t_cap,
@@ -229,6 +247,8 @@ class VisionThread(threading.Thread):
                 face_detector.close()
             if hand_detector is not None:
                 hand_detector.close()
+            if glasses is not None:
+                glasses.close()
 
     def _emit(self, item):
         """큐를 쌓지 않고 항상 최신 프레임만 유지."""
@@ -347,17 +367,26 @@ def build_parser():
                     help="cloud: SPACE/c 또는 표준입력 start/stop/cancel로 문장 구간 지정")
     ap.add_argument("--pose-3d", action="store_true",
                     help="cloud: 3D 좌표도 전송 (서버가 --features 3d 체크포인트일 때)")
-    ap.add_argument("--recognize", choices=["server", "device", "local"], default="server",
+    ap.add_argument("--recognize", choices=["server", "device", "local", "qwen"], default="server",
                     help="cloud: server=좌표를 보내 서버가 인식(기준선 A), "
                          "device=이 기기에서 ONNX로 인식해 글로스만 전송(비교 경로 B), "
                          "local=인식과 문장 선택을 모두 이 기기에서 (서버 불필요)")
+    ap.add_argument("--qwen-model", metavar="DIR",
+                    help="--recognize qwen: src.train_qwen 결과 폴더 (안경 시점 Qwen 미세조정 모델)")
+    ap.add_argument("--compose-llm", metavar="MODEL",
+                    help="--recognize qwen: 목록에 없는 말을 이 문장 모델로 만듦 "
+                         "(예: Qwen/Qwen2.5-3B-Instruct, 이 기기에서 실행)")
     ap.add_argument("--onnx", metavar="PATH",
                     help="--recognize device/local 의 CTC ONNX (tools/export_ctc_onnx.py 결과)")
     ap.add_argument("--phrases", metavar="PATH", default=None,
-                    help="local: 상황 문장 목록 (기본: assets/phrases/hospital.json, "
+                    help="local: 상황 문장 목록 파일·폴더, 쉼표로 여러 개 (기본: assets/phrases 전부, "
                          "'none' 이면 문맥 보정 없음)")
     ap.add_argument("--phrase-bonus", type=float, default=1.0, metavar="VALUE",
                     help="local: 문맥 보정 세기 (0=거의 안 함, 클수록 목록 문장으로 기웁니다)")
+    ap.add_argument("--speak-min", type=float, default=0.5, metavar="SCORE",
+                    help="local: 인식 점수가 이 값 이상이면 소리로 말함 (0=항상, 1.01=말하지 않음)")
+    ap.add_argument("--save-segments", metavar="DIR",
+                    help="local: 인식한 구간의 좌표와 결과를 이 폴더에 저장 (문제 진단용)")
     ap.add_argument("--auto-segment", action="store_true",
                     help="cloud: 손 움직임으로 문장 구간 자동 시작/종료 (SPACE도 계속 사용 가능)")
     ap.add_argument("--viewpoint", choices=["webcam", "glasses"], default=C.SIGN_VIEWPOINT,
@@ -377,6 +406,8 @@ def build_parser():
                     choices=["preview", "serial", "pi", "null"],
                     help="안경 화면 출력. 기본: 말풍선 창이 있으면 숨김, 없으면 preview")
     ap.add_argument("--debug", action="store_true", help="카메라 뷰도 함께 표시")
+    ap.add_argument("--show-landmarks", action="store_true",
+                    help="기존 영상 창에 Holistic 관절 연결선을 표시")
     ap.add_argument("--video-captions", action=argparse.BooleanOptionalAction, default=None,
                     help="영상 위 말풍선 표시 (카메라가 있으면 기본 활성화)")
     ap.add_argument("--transcript", action="store_true",
@@ -443,6 +474,8 @@ def main():
         value = getattr(a, name)
         if value is not None and not math.isfinite(value):
             ap.error(f"--{name} 에는 유한한 숫자가 필요합니다")
+    if a.recognize == "qwen" and not a.qwen_model:
+        ap.error("--recognize qwen 에는 --qwen-model 이 필요합니다")
     if a.recognize in ("device", "local") and not a.onnx:
         ap.error(f"--recognize {a.recognize} 에는 --onnx 가 필요합니다")
     if not math.isfinite(a.phrase_bonus) or a.phrase_bonus < 0:
@@ -503,13 +536,31 @@ def main():
             if a.recognize == "local":
                 from src.local_sign import LocalSignClient, load_phrases
                 phrases, dropped = [], 0
-                phrase_path = Path(a.phrases or C.ASSET_DIR / "phrases" / "hospital.json")
+                phrase_path = Path(a.phrases or C.ASSET_DIR / "phrases")
                 if (a.phrases or "").lower() != "none" and (a.phrases or phrase_path.exists()):
                     phrases, dropped = load_phrases(phrase_path, device.labels)
-                client = local_sign = LocalSignClient(device, phrases, bonus=a.phrase_bonus)
+                client = local_sign = LocalSignClient(device, phrases, bonus=a.phrase_bonus,
+                                                              save_dir=a.save_segments,
+                                                              speak_min=a.speak_min)
                 print(f"[수어] 기기 단독 인식: {len(device.labels) - 1}개 단어, 상황 문장 "
                       f"{len(phrases)}개" + (f" (모델에 없는 단어라 제외 {dropped}개)"
                                             if dropped else "") + ", 서버를 쓰지 않습니다")
+            elif a.recognize == "qwen":
+                from src.qwen_sign import QwenSignClient
+                composer = None
+                if a.compose_llm:
+                    from src.translation import LocalTranslator
+                    examples = json.loads((C.ASSET_DIR / "glasses" / "phrases.json").read_text(
+                        encoding="utf-8"))
+                    composer = LocalTranslator(a.compose_llm, examples=examples)
+                    print(f"[수어] 문장 모델: {a.compose_llm} (이 기기에서 실행)")
+                client = local_sign = QwenSignClient(a.qwen_model, speak_min=a.speak_min,
+                                                     save_dir=a.save_segments,
+                                                     composer=composer)
+                print(f"[수어] 안경 시점 Qwen 인식: {len(client.model.glosses)}개 단어, "
+                      f"답 {len(client.options)}개 중 선택, 서버를 쓰지 않습니다"
+                      + ("" if a.viewpoint == "glasses" else
+                         " (경고: 안경 시점으로 학습한 모델입니다. --viewpoint glasses 권장)"))
             elif a.recognize == "device":
                 client = GlossClient(device)
                 print(f"[cloud] 기기 인식(B): {device.feature_set}, "
@@ -546,7 +597,10 @@ def main():
                            camera_index=sign_index, segment_recorder=recorder,
                            pose_3d=a.pose_3d, segmenter=segmenter, segment_events=commands,
                            track_face=not a.fixed_caption and not separate_face,
-                           preview_hands=a.debug, predictor=predictor, word_events=word_events)
+                           preview_hands=a.debug and a.viewpoint != "glasses",
+                           predictor=predictor, word_events=word_events,
+                           hands_only=a.viewpoint == "glasses",
+                           show_landmarks=a.show_landmarks)
               if need_vision else None)
     if vision:
         vision.start()

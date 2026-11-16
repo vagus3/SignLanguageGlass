@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 from src.continuous_sign import Recognizer
 from src.pose_sequence import JOINT_NAMES, VERSION, PoseSequence
+from src.continuous_sign import CtcRecognizer
 from src.train_words import (Composer, augment, cut, load_words, rest_pieces, rest_rows,
                              score, sign_piece, train, word_rows)
 
@@ -59,6 +60,9 @@ with tempfile.TemporaryDirectory() as td:
     t, p, m = sign_piece(rows[0], None)
     assert t[0] == 0 and abs(t[-1] - 1.2) < 0.05 and len(t) == len(p) == len(m)
     assert cut(rows[0]["sequence"], 3.99, 4.0) is None, "fewer than two frames"
+    # Wide edges keep the raising and lowering of the hands, as a device segment does.
+    lengths = [sign_piece(rows[0], rng, wide=(True, True))[0][-1] for _ in range(40)]
+    assert max(lengths) > 2.5 and min(lengths) >= 1.0 - 0.04
     rests = rest_pieces(rows[0])
     assert len(rests) == 2 and all(piece[0][-1] < 1.4 for piece in rests)
     assert all(r["glosses"] == [] for r in rest_rows(rows)) and len(word_rows(rows)) == 6
@@ -79,14 +83,29 @@ with tempfile.TemporaryDirectory() as td:
         seen.add(len(glosses))
     assert seen == {0, 1, 2, 3}, seen
 
+    # A real sentence clip ("가 나", signs at 1.0..1.6 and 1.8..2.4 s) is used whole, and
+    # its words are also cut out one by one without reaching into the neighbouring sign.
+    sentence = {**clip("가", "s1"), "id": "sentence", "glosses": ["가", "나"],
+                "sign_intervals": [[1.0, 1.6], [1.8, 2.4]]}
+    sentence.update(labels=["가", "나"], label=None)
+    mixed = Composer(rows + [sentence], sentence_rate=1.0, negative=0)
+    cut_out = mixed.singles[("s1", "F")]["가"][-1]
+    assert cut_out["sign_intervals"] == [[1.0, 1.6]] and abs(cut_out["room"][1] - 0.1) < 1e-9
+    assert all(sign_piece(cut_out, rng)[0][-1] <= 0.6 + 0.3 + 0.1 + 0.04 for _ in range(30))
+    whole = [mixed.sample(rng, i)["glosses"] for i in range(200)]
+    assert ["가", "나"] in whole and any(len(g) == 3 for g in whole), "sentence, sentence + word"
+    assert len(word_rows(rows + [sentence])) == 6, "sentences are not scored as single words"
+    assert score(CtcRecognizer(2), rows + [sentence], ["<blank>", "가", "나"])[
+        "real_sentence_wer"] is not None
+
     # Held-out signer: never used for training, and good enough on this separable fixture.
     train_rows = [r for r in rows if r["signer_id"] != "s3"]
     val_rows = [r for r in rows if r["signer_id"] == "s3"]
     labels = ["<blank>", "가", "나"]
     lines = []
-    model, history, best = train(train_rows, labels, val_rows=val_rows, epochs=40, batch=8,
+    model, history, best = train(train_rows, labels, val_rows=val_rows, epochs=80, batch=8,
                                  samples=64, log=lines.append)
-    assert len(history) == len(lines) == 40 and history[-1]["loss"] < history[0]["loss"]
+    assert len(history) == len(lines) == 80 and history[-1]["loss"] < history[0]["loss"]
     assert best["word_accuracy"] == 1.0, best
     assert best["clips"] == 2 and set(best["word_accuracy_by_view"]) == {"F"}
     result = score(model, val_rows, labels)

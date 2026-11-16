@@ -164,6 +164,14 @@ class TtsPlayer(threading.Thread):
 
     def _speak_fallback(self, text):
         """캐시에 없을 때 OS 내장 음성으로. macOS=Yuna, Windows=Heami."""
+        if sys.platform == "darwin":
+            # pyttsx3 의 macOS 구동부는 pyobjc 가 필요하고 없으면 실패합니다. 내장 say 로 말합니다.
+            import subprocess
+            done = subprocess.run(["say", "-v", "Yuna", text], capture_output=True, text=True,
+                                  timeout=30)
+            if done.returncode:
+                raise RuntimeError(done.stderr.strip() or "macOS say 실패")
+            return
         if sys.platform == "win32" and self._com is None:
             import pythoncom
             pythoncom.CoInitialize()

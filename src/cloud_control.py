@@ -70,7 +70,7 @@ class CloudController:
             self.stats.since("cloud_response", origin_t)
             if result.get("auto_speech") and not result.get("mock"):
                 if self.tts:
-                    self.tts.say(text, origin_t=origin_t)
+                    self.tts.say(result.get("speech") or text, origin_t=origin_t)
             else:
                 self.out("[cloud] 미검증/모의 결과: 텍스트만 표시합니다.")
         elif status == "fallback":

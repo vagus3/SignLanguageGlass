@@ -8,7 +8,9 @@ CloudClient 자리에 그대로 들어갑니다. 네트워크는 쓰지 않습�
    상대가 방금 한 말(heard)은 그 말에 대한 대답일 법한 문장에 가산점을 줍니다.
 3. 목록에 있는 단어열이면 그 문장을, 아니면 인식된 단어를 그대로 보여 줍니다.
 
-문맥으로 고른 문장은 추정입니다. "(추정)" 을 붙여 보여 주고, 자동으로 말하지 않습니다.
+문맥으로 고른 문장은 추정입니다. 화면에는 "(추정)" 을 붙여 보여 줍니다.
+점수가 speak_min 이상이면 소리로도 말합니다(speech 는 "(추정)" 을 뺀 문장). 응급 상황에서는
+글자보다 소리가 상대에게 먼저 닿아야 하므로, 추정이어도 점수가 충분하면 말합니다.
 """
 import json
 import re
@@ -25,16 +27,28 @@ _VARIANT = re.compile(r"_\d+$")      # 같은 이름의 다른 수어를 구분�
 
 
 def load_phrases(path, labels):
-    """[{"glosses", "text", "after"}]; 모델이 모르는 단어가 든 문장은 빼고 몇 개인지 돌려줍니다."""
-    entries = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(entries, list):
-        raise ValueError("문장 목록은 JSON 배열이어야 합니다")
-    known, dropped = [], 0
+    """[{"glosses", "text", "after"}]; 모델이 모르는 단어가 든 문장은 빼고 몇 개인지 돌려줍니다.
+
+    path 는 파일, 폴더(안의 *.json 전부), 또는 쉼표로 이은 여러 개입니다. 같은 단어열이
+    여러 목록에 있으면 먼저 나온 것을 씁니다."""
+    files = []
+    for part in str(path).split(","):
+        files += sorted(Path(part).glob("*.json")) if Path(part).is_dir() else [Path(part)]
+    entries = []
+    for file in files:
+        loaded = json.loads(file.read_text(encoding="utf-8"))
+        if not isinstance(loaded, list):
+            raise ValueError(f"{file}: 문장 목록은 JSON 배열이어야 합니다")
+        entries += loaded
+    known, dropped, seen = [], 0, set()
     for entry in entries:
         glosses, text = entry.get("glosses"), entry.get("text")
         if (not isinstance(glosses, list) or not glosses or not isinstance(text, str)
                 or not text.strip()):
             raise ValueError(f"문장 항목에는 glosses 와 text 가 필요합니다: {entry!r}")
+        if tuple(glosses) in seen:
+            continue
+        seen.add(tuple(glosses))
         if all(g in labels for g in glosses):
             known.append({"glosses": list(glosses), "text": text.strip(),
                           "after": list(entry.get("after") or ())})
@@ -50,7 +64,11 @@ def plain_words(glosses):
 class LocalSignClient:
     timeout = 10
 
-    def __init__(self, recognizer, phrases=(), *, bonus=1.0, heard_seconds=20.0):
+    def __init__(self, recognizer, phrases=(), *, bonus=1.0, heard_seconds=20.0, save_dir=None,
+                 speak_min=0.5):
+        """save_dir: 인식한 구간의 좌표와 결과를 남길 폴더 (실제 카메라 문제를 살펴볼 때)."""
+        self.save_dir = Path(save_dir) if save_dir else None
+        self.speak_min = speak_min      # 이 점수 이상이면 소리로 말함 (1 보다 크면 말하지 않음)
         self.recognizer, self.phrases = recognizer, list(phrases)
         self.bonus, self.heard_seconds = bonus, heard_seconds
         self.texts = {tuple(p["glosses"]): p["text"] for p in self.phrases}
@@ -79,6 +97,19 @@ class LocalSignClient:
         glosses, score, source = self.recognize(sequence)
         if stats:
             stats.add("device_recognize", (clock.now() - start) * 1000)
+        if self.save_dir:
+            try:        # 진단용 저장이 인식을 막으면 안 됩니다
+                self.save_dir.mkdir(parents=True, exist_ok=True)
+                name = f"{session_id}_{segment_id:04d}" if isinstance(segment_id, int) \
+                    else f"{session_id}_{segment_id}"
+                sequence.save(self.save_dir / f"{name}.npz")
+                (self.save_dir / f"{name}.json").write_text(json.dumps(
+                    {"glosses": list(glosses), "score": float(score), "source": source,
+                     "frames": len(sequence.timestamps),
+                     "seconds": float(sequence.timestamps[-1] - sequence.timestamps[0])},
+                    ensure_ascii=False), encoding="utf-8")
+            except (OSError, ValueError) as error:
+                print(f"[수어] 구간 저장 실패: {error}")
         return {"version": GLOSS_VERSION, "session_id": session_id, "segment_id": segment_id,
                 "glosses": list(glosses), "score": float(score), "source": source}
 
@@ -96,6 +127,8 @@ class LocalSignClient:
         else:
             text = self.texts.get(tuple(glosses))
             guessed = payload["source"] == "phrase"
+            spoken = text or plain_words(glosses)
             result.update(status="ok", source="phrase" if text else "words",
-                          text=(GUESS if guessed else "") + (text or plain_words(glosses)))
+                          text=(GUESS if guessed else "") + spoken, speech=spoken,
+                          auto_speech=bool(payload["score"] >= self.speak_min))
         return result

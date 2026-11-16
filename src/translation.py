@@ -40,7 +40,10 @@ class Glossary:
     Checkpoint label order is never changed here; glosses are looked up by id.
     """
 
-    def __init__(self, meanings, *, kinds=None, sentences=(), aihub=None):
+    def __init__(self, meanings, *, kinds=None, sentences=(), aihub=None, strict_additions=False):
+        """strict_additions: 생성 문장에 입력하지 않은 다른 단어(이 용어집의 단어)가 나오면
+        거릅니다. 단어가 정해진 안경 응급 어휘처럼 '하지 않은 말'이 위험한 곳에서 씁니다."""
+        self.strict_additions = strict_additions
         self.meanings = dict(meanings)
         self.kinds = dict(kinds or {})
         self.aihub = dict(aihub or {})
@@ -138,6 +141,15 @@ class Glossary:
         for g in glosses:
             if self.kinds.get(g) in ("person", "place", "number") and self.meanings[g] not in text:
                 issues.append(f"{self.kinds[g]}:{g}")
+        if self.strict_additions:
+            used = set(words)
+            for gloss, meaning in self.meanings.items():
+                if gloss in glosses or meaning in used:
+                    continue
+                # 동사·형용사는 '다' 앞 두 글자로 (쓰러지다 -> 쓰러, 도와주다 -> 도와)
+                stem = meaning[:2] if meaning.endswith("다") and len(meaning) >= 3 else meaning
+                if len(stem) >= 2 and stem in text:
+                    issues.append(f"added:{gloss}")
         return issues
 
 
@@ -149,7 +161,8 @@ class Composition:
     issues: tuple = ()
 
 
-def compose(glosses, glossary, translator):
+def compose(glosses, glossary, translator, context=None):
+    """context: 상대가 방금 한 말 등. 받을 수 있는 번역기(LocalTranslator)에만 전달합니다."""
     glossary = Glossary.from_mapping(glossary)
     if not glosses or glossary.unknown(glosses):
         return Composition("uncertain")
@@ -157,7 +170,10 @@ def compose(glosses, glossary, translator):
     if reviewed is not None:
         return Composition("ok", reviewed, "reviewed")
     try:
-        text = translator.translate(list(glosses), glossary.meanings).strip()
+        if context and getattr(translator, "accepts_context", False):
+            text = translator.translate(list(glosses), glossary.meanings, context=context).strip()
+        else:
+            text = translator.translate(list(glosses), glossary.meanings).strip()
         issues = tuple(glossary.check(text, glosses))
         if text and not issues:
             return Composition("ok", text, "language_model")
@@ -227,6 +243,88 @@ class VllmTranslator:
         if _NUMBER.findall(text) != _NUMBER.findall(" ".join(words)):
             raise ValueError("Language model changed numeric content")
         return text.strip()
+
+
+LOCAL_MODEL = "Qwen/Qwen2.5-3B-Instruct"
+
+
+class LocalTranslator:
+    """이 기기에서 도는 Qwen (transformers). 인터넷 없이 단어열 + 상대의 말 -> 한 문장.
+
+    examples: [{"glosses", "text"}] 예시 문장. 입력과 단어가 겹치는 것을 몇 개 골라 보여 줍니다.
+    맥 GPU(MPS)에서 transformers 의 generate 가 위치 계산을 틀리는 경우가 있어(train_qwen 참고)
+    위치를 직접 주며 한 글자씩 생성합니다.
+    """
+    accepts_context = True
+
+    def __init__(self, model=None, device=None, examples=(), max_new_tokens=48,
+                 local_only=True):
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        self.model = model or os.environ.get("LOCAL_LLM_MODEL", LOCAL_MODEL)
+        self.device = device or ("mps" if torch.backends.mps.is_available() else "cpu")
+        dtype = torch.float16 if self.device != "cpu" else torch.float32
+        adapter = None
+        if Path(self.model, "composer.json").exists():     # src.train_composer 결과 폴더
+            adapter = Path(self.model, "adapter")
+            self.model = json.loads(Path(self.model, "composer.json").read_text(
+                encoding="utf-8"))["base"]
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model, local_files_only=local_only)
+        self.llm = AutoModelForCausalLM.from_pretrained(
+            self.model, torch_dtype=dtype, local_files_only=local_only).to(self.device).eval()
+        if adapter is not None:
+            from peft import PeftModel
+            self.llm = PeftModel.from_pretrained(self.llm, adapter).merge_and_unload().eval()
+            self.model = f"{self.model}+{adapter.parent.name}"
+        self.examples, self.max_new_tokens = list(examples), max_new_tokens
+
+    def _shots(self, words, limit=6):
+        scored = sorted(self.examples, key=lambda e: -len(set(e["glosses"]) & set(words)))
+        return scored[:limit]
+
+    def prompt(self, glosses, mapping, context=None):
+        words = [mapping[g] for g in glosses]
+        lines = ["착용자가 한국수어로 말한 단어열을, 상대에게 들려줄 자연스러운 한국어 문장으로 "
+                 "바꾸세요. 응급·병원 상황입니다. 입력 단어의 뜻만 쓰세요. 입력에 없는 사건, 증상, "
+                 "요청, 사람, 숫자, 장소, 부정/긍정을 덧붙이지 마세요. 조사와 어미만 자연스럽게 "
+                 "붙이세요. '상대가 방금 한 말'은 무엇에 대한 대답인지 알기 위한 참고이며, 그 말을 "
+                 "따라 하거나 이어 쓰지 마세요. 문장만 답하세요."]
+        for example in self._shots(glosses):
+            lines.append(f"단어: {' '.join(mapping.get(g, g) for g in example['glosses'])}\n"
+                         f"문장: {example['text']}")
+        if context:
+            lines.append(f"상대가 방금 한 말: {context}")
+        lines.append(f"단어: {' '.join(words)}\n문장:")
+        return "\n\n".join(lines)
+
+    def translate(self, glosses, mapping, context=None):
+        import torch
+        messages = [{"role": "user", "content": self.prompt(glosses, mapping, context)}]
+        ids = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True,
+                                                 return_tensors="pt").to(self.device)
+        eos = {self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|im_end|>")}
+        out, past, position = [], None, torch.arange(ids.shape[1], device=self.device)[None]
+        step = ids
+        with torch.inference_mode():
+            for _ in range(self.max_new_tokens):
+                result = self.llm(input_ids=step, past_key_values=past, position_ids=position,
+                                  use_cache=True)
+                past = result.past_key_values
+                token = int(result.logits[0, -1].argmax())
+                if token in eos:
+                    break
+                out.append(token)
+                step = torch.tensor([[token]], device=self.device)
+                position = position[:, -1:] + 1
+        text = self.tokenizer.decode(out, skip_special_tokens=True).strip()
+        text = text.splitlines()[0].strip().strip('"“”') if text else ""
+        if text.startswith("문장:"):
+            text = text[3:].strip()
+        if not text or len(text) > 200:
+            raise ValueError("Invalid language model output")
+        if _NUMBER.findall(text) != _NUMBER.findall(" ".join(mapping[g] for g in glosses)):
+            raise ValueError("Language model changed numeric content")
+        return text
 
 
 class MockTranslator:
