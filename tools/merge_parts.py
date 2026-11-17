@@ -61,9 +61,18 @@ def check(parts):
     """조각 번호가 연속인지 확인. 빠진 게 있으면 병합해봐야 깨집니다."""
     nums = [n for n, _ in parts]
     lo, hi = min(nums), max(nums)
+    dup = len(nums) != len(set(nums))
+    if hi >= len(parts) + 1000:
+        # aihubshell 은 번호 대신 시작 바이트 위치를 씁니다 (part0, part1073741824, ...).
+        # 연속 번호로 보고 range 를 만들면 수십억 개짜리 집합이 되어 메모리가 터집니다.
+        expected = 0
+        for num, part in sorted(parts):
+            if num != expected:
+                return [expected], dup, lo, hi
+            expected += part.stat().st_size
+        return [], dup, lo, hi
     expected = set(range(lo, hi + 1))
     missing = sorted(expected - set(nums))
-    dup = len(nums) != len(set(nums))
     return missing, dup, lo, hi
 
 

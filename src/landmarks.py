@@ -274,11 +274,12 @@ def draw_hand_preview(image, results):
     return image
 
 
-def draw_debug(image, results):
-    """수집/디버그용 오버레이."""
+def draw_debug(image, results, include_pose=True):
+    """수집/디버그용 오버레이. include_pose=False이면 손만 표시합니다."""
     import mediapipe as mp
     mpd, mph = mp.solutions.drawing_utils, mp.solutions.holistic
-    mpd.draw_landmarks(image, results.pose_landmarks, mph.POSE_CONNECTIONS)
+    if include_pose:
+        mpd.draw_landmarks(image, results.pose_landmarks, mph.POSE_CONNECTIONS)
     mpd.draw_landmarks(image, results.left_hand_landmarks, mph.HAND_CONNECTIONS)
     mpd.draw_landmarks(image, results.right_hand_landmarks, mph.HAND_CONNECTIONS)
     return image

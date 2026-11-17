@@ -213,8 +213,36 @@ else:
         assert body["glosses"] == ["G0"] and "coordinates" not in body
         assert body["recognizer"] == DeviceModel(td / "ctc.json").metadata["model_id"]
         assert "[cloud 번역] 안녕하세요." in output.getvalue(), output.getvalue()
+        # --recognize local: recognition and the sentence both happen here. No request leaves
+        # the machine, and a server address is not needed.
+        (td / "phrases.json").write_text(json.dumps(
+            [{"glosses": ["G0"], "text": "머리가 아파요."},
+             {"glosses": ["모르는말"], "text": "모델에 없는 단어"}], ensure_ascii=False),
+            encoding="utf-8")
+
+        def no_network(request, timeout):
+            raise AssertionError("local recognition must not use the network")
+
+        camera_state.update(phase=0, calls=0)
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["main.py", "--sign-backend", "cloud", "--display", "null",
+                                        "--no-stt", "--no-tts", "--fixed-caption",
+                                        "--recognize", "local", "--onnx", str(td / "ctc.onnx"),
+                                        "--phrases", str(td / "phrases.json")]), \
+                patch("src.camera.CameraReader", Camera), \
+                patch("src.landmarks.make_holistic", lambda _: Holistic()), \
+                patch("cv2.imshow"), patch("cv2.destroyAllWindows"), patch("cv2.waitKey", wait_key), \
+                patch("urllib.request.urlopen", side_effect=no_network), \
+                patch.dict(os.environ, {"SIGN_SERVER_URL": "", "SIGN_SERVER_TOKEN": ""}), \
+                contextlib.redirect_stdout(output):
+            main.main()
+        assert "상황 문장 1개 (모델에 없는 단어라 제외 1개)" in output.getvalue(), output.getvalue()
+        assert "[cloud 번역] 머리가 아파요." in output.getvalue(), output.getvalue()
         # Wrong combinations stop before any camera opens.
-        for argv in (["--recognize", "device"],
+        for argv in (["--recognize", "local"],
+                     ["--recognize", "local", "--onnx", str(td / "ctc.onnx"),
+                      "--phrases", str(td / "missing.json")],
+                     ["--recognize", "device"],
                      ["--recognize", "device", "--onnx", str(td / "ctc.onnx"), "--pose-3d"]):
             with patch.object(sys, "argv", ["main.py", "--sign-backend", "cloud", "--display",
                                             "null", "--no-stt", "--no-tts", *argv]), \

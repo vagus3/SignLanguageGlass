@@ -113,6 +113,17 @@ def migrate_legacy(texts, manifest):
     return copied
 
 
+def phrase_texts(paths):
+    """상황 문장 목록(assets/phrases, assets/glasses/phrases.json 등)의 text. 쉼표로 여러 개."""
+    out = []
+    for part in str(paths).split(","):
+        part = Path(part)
+        for file in (sorted(part.glob("*.json")) if part.is_dir() else [part]):
+            out += [entry["text"] for entry in json.loads(file.read_text(encoding="utf-8"))
+                    if isinstance(entry, dict) and entry.get("text")]
+    return out
+
+
 def phrases(glossary=None):
     """캐싱할 문장 = 어휘 전체 + 규칙 기반 완성 문장 (+ 용어집의 검수 문장).
 
@@ -172,11 +183,13 @@ def synth_macos(text, dst, voice="Yuna"):
         sf.write(dst, data, C.AUDIO_RATE, subtype="PCM_16")
 
 
-async def main(engine="edge", voice="Yuna", glossary=None):
+async def main(engine="edge", voice="Yuna", glossary=None, phrase_paths=None):
     C.TTS_CACHE.mkdir(parents=True, exist_ok=True)
     manifest_path = C.TTS_CACHE / "manifest.json"
     manifest = _read_manifest()
     wanted = phrases(glossary)
+    if phrase_paths:
+        wanted = sorted(set(wanted) | set(phrase_texts(phrase_paths)))
     copied = migrate_legacy(wanted, manifest)
     if copied:
         print(f"기존 v1 캐시 {len(copied)}개를 {KEY_VERSION} 이름으로 복사했습니다 (재합성 없음).")
@@ -218,5 +231,6 @@ if __name__ == "__main__":
     ap.add_argument("--engine", choices=["edge", "macos"], default="edge")
     ap.add_argument("--voice", default="Yuna", help="macOS 로컬 음성 이름")
     ap.add_argument("--glossary", help="glossary.json 의 검수 문장도 합성 (의미 검수 후)")
+    ap.add_argument("--phrases", help="상황 문장 목록 파일·폴더 (쉼표로 여러 개)의 문장도 합성")
     args = ap.parse_args()
-    asyncio.run(main(args.engine, args.voice, args.glossary))
+    asyncio.run(main(args.engine, args.voice, args.glossary, args.phrases))

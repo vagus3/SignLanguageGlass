@@ -225,11 +225,21 @@ src/
   collect_continuous.py 문장 단위 연속 수어 좌표 수집기
   train.py             Step 1-2 LSTM 단어 모델 학습
   train_continuous.py  CTC 연속 수어 모델 학습 스크립트
+  train_words.py       낱개 단어 클립을 이어 붙인 합성 문장으로 같은 모델을 학습 (AI Hub 단어용)
   face_tracker.py    ★ 얼굴 박스 중심 평활화, 1:1 공간 ID 추적 및 선택
   face_activity.py    다중 Face Mesh 입술 좌표와 크기 정규화
   active_speaker.py   입 움직임 이력·전환 조건
   speaker_audio.py    오디오 수집 시각 및 화자별 인식 구간 분리
   caption_state.py   ★ CaptionBook 사람별 발화와 CaptionState 수명·얼굴 연결
+  local_sign.py        서버 없이 이 기기에서 단어 인식 + 상황 문장 선택 (--recognize local)
+  ego_synth.py         AI Hub 3D 관절을 안경 시점(손만 보이는 1인칭)으로 바꿔 학습 예시 생성
+  glasses_hands.py     안경 시점 손 추적 (MediaPipe Hands, 왼손·오른손 이어 붙이기)
+  collect_glasses.py   안경 카메라로 단어·문장을 찍어 학습 자료 수집 (영상 + 손 관절)
+  team_data.py         팀 촬영 자료를 학습 예시로 변환·AI Hub 가짜 자료와 섞기
+  train_qwen.py        관절 → Qwen2.5-0.5B 단어·문장 인식 미세조정 (--recognize qwen 모델)
+  eval_qwen.py         학습에 쓰지 않은 수어자로 단어·문장 정확도 측정
+  qwen_sign.py         안경 시점 Qwen 모델 실행 + 문장 모델(3B) 연결
+  train_composer.py    Qwen2.5-3B 문장 모델 미세조정 (단어열+상대 말 → 문장)
   caption_history.py   최근 200개 확정 대화 기록 메모리 보관
   text_layout.py       한글 폰트 로딩·화면 폭 맞춤 줄바꿈
   video_overlay.py   ★ 카메라 영상 위 실시간 AR 말풍선·얼굴 테두리 렌더링
@@ -247,6 +257,7 @@ tools/
   merge_parts.py       AI Hub 분할압축 병합
   check_mount.py       실제 장착 시점 손/얼굴 검출률과 FPS 측정
   prepare_aihub3d.py   3D 손 데이터 변환·중복 제거·원본 동작 그룹 감사
+  prepare_aihub_words.py  AI Hub 단어 묶음(zip)에서 고른 단어만 꺼내 좌표 데이터셋으로 변환
   verify_assets.py     모델/폰트/TTS 및 합성음성→STT 무결성 검사
   prepare_continuous.py  OpenPose JSON → 문장 좌표 데이터셋
   extract_mediapipe.py   원본 영상 → 실행 시와 같은 MediaPipe 좌표 데이터셋
@@ -661,3 +672,24 @@ python tools/prepare_aihub3d.py data/raw/New_sample --out data/processed/aihub3d
   사실상 놀게 됩니다.
 - **실물 OLED 규격은 미확정입니다.** 현재 보존된 렌더러·패킹은 128×64 SSD1306/SSD1309
   기준입니다. 다른 해상도·컨트롤러 패널은 드라이버·프레임버퍼 호환 확인이 필요합니다.
+
+## 안경 시점 Qwen 인식 (실험, feat/glasses-qwen)
+
+안경 카메라가 착용자의 손만 보는 상황을 위한 경로입니다. 손 관절을 Qwen2.5-0.5B 로 미세조정한
+모델이 단어와 상황 문장을 고르고, 목록에 없는 말은 Qwen2.5-3B 가 상대의 말을 맥락으로 문장을 만듭니다.
+서버 없이 이 기기에서 실행합니다. 기본 실행 경로(`--recognize server`)는 바뀌지 않습니다.
+
+```
+pip install -r requirements-qwen.txt
+python main.py --sign-backend cloud --recognize qwen --qwen-model models/glasses_qwen_v3 \
+    --compose-llm models/composer_3b_v2 --viewpoint glasses --auto-segment
+```
+
+- 모델(`models/`)과 AI Hub 자료(`data/`)는 저장소에 없습니다. AI Hub 자료와 그것으로 학습한 모델은
+  공개 저장소에 올리지 않고, 출처를 표시합니다 (한국지능정보사회진흥원 AI 허브 '수어 영상').
+- `--sign-backend device`(단어를 바로 발화)와 `--recognize local/qwen`(문장까지 기기에서 구성)은
+  함께 쓸 수 없습니다.
+- 학습: `python -m src.train_qwen --out models/NAME`, 문장 모델: `python -m src.train_composer --out ...`,
+  학습에 쓰지 않은 수어자로 측정: `python -m src.eval_qwen models/NAME --signers REAL17,REAL18`.
+- 측정한 정확도는 AI Hub 3D 관절을 안경 시점으로 **계산해서 바꾼 자료** 기준입니다. 실제 안경 카메라
+  성능은 팀 촬영(`python -m src.collect_glasses`)으로 확인해야 합니다.

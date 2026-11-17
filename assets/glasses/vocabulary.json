@@ -1,0 +1,380 @@
+{
+ "note": "안경 카메라(착용자 시점, 팔을 약 15cm 앞으로 뻗음)에 손이 보이는 단어 55개. reference_clip 은 AI Hub '수어 영상' 클립 이름(촬영 시 따라 할 변형). 영상·좌표는 저장소에 넣지 않습니다.",
+ "words": [
+  {
+   "gloss": "도와주다",
+   "category": "긴급",
+   "aihub_sentence_only": true,
+   "reference_clip": "NIA_SL_SEN0387_REAL01_F",
+   "reference_seconds": [
+    2.92,
+    4.33
+   ],
+   "reference_sentence": "길 안내하다 도와주다"
+  },
+  {
+   "gloss": "급하다",
+   "category": "긴급",
+   "aihub_word": "WORD1111",
+   "reference_clip": "NIA_SL_WORD1111_REAL01_F"
+  },
+  {
+   "gloss": "빨리",
+   "category": "긴급",
+   "aihub_word": "WORD1260",
+   "reference_clip": "NIA_SL_WORD1260_REAL01_F"
+  },
+  {
+   "gloss": "119",
+   "category": "긴급",
+   "aihub_sentence_only": true,
+   "reference_clip": "NIA_SL_SEN0301_REAL01_F",
+   "reference_seconds": [
+    3.19,
+    3.93
+   ],
+   "reference_sentence": "저기 쓰러지다 119 전화걸다 가능"
+  },
+  {
+   "gloss": "구급차",
+   "category": "긴급",
+   "aihub_word": "WORD0149",
+   "reference_clip": "NIA_SL_WORD0149_REAL01_F"
+  },
+  {
+   "gloss": "응급실",
+   "category": "긴급",
+   "aihub_sentence_only": true,
+   "reference_clip": "NIA_SL_SEN0581_REAL01_F",
+   "reference_seconds": [
+    1.5,
+    2.71
+   ],
+   "reference_sentence": "응급실 가다"
+  },
+  {
+   "gloss": "부르다",
+   "category": "긴급",
+   "aihub_sentence_only": true,
+   "reference_clip": "NIA_SL_SEN0201_REAL01_F",
+   "reference_seconds": [
+    4.21,
+    5.01
+   ],
+   "reference_sentence": "역무원 부르다"
+  },
+  {
+   "gloss": "쓰러지다",
+   "category": "긴급",
+   "aihub_word": "WORD1229",
+   "reference_clip": "NIA_SL_WORD1229_REAL01_F"
+  },
+  {
+   "gloss": "불편하다",
+   "category": "긴급",
+   "aihub_sentence_only": true,
+   "reference_clip": "NIA_SL_SEN0347_REAL01_F",
+   "reference_seconds": [
+    1.86,
+    2.36
+   ],
+   "reference_sentence": "불편하다 있다 신고"
+  },
+  {
+   "gloss": "아프다",
+   "category": "증상",
+   "aihub_word": "WORD1152",
+   "reference_clip": "NIA_SL_WORD1152_REAL01_F"
+  },
+  {
+   "gloss": "숨차다",
+   "category": "증상",
+   "aihub_word": "WORD0664",
+   "reference_clip": "NIA_SL_WORD0664_REAL01_F"
+  },
+  {
+   "gloss": "화상",
+   "category": "증상",
+   "aihub_word": "WORD0071",
+   "reference_clip": "NIA_SL_WORD0071_REAL01_F"
+  },
+  {
+   "gloss": "붓다",
+   "category": "증상",
+   "aihub_word": "WORD1536",
+   "reference_clip": "NIA_SL_WORD1536_REAL01_F"
+  },
+  {
+   "gloss": "가렵다",
+   "category": "증상",
+   "aihub_word": "WORD1101",
+   "reference_clip": "NIA_SL_WORD1101_REAL01_F"
+  },
+  {
+   "gloss": "병원",
+   "category": "병원",
+   "aihub_word": "WORD1496",
+   "reference_clip": "NIA_SL_WORD1496_REAL01_F"
+  },
+  {
+   "gloss": "의사",
+   "category": "병원",
+   "aihub_word": "WORD0163",
+   "reference_clip": "NIA_SL_WORD0163_REAL01_F"
+  },
+  {
+   "gloss": "약",
+   "category": "병원",
+   "aihub_sentence_only": true,
+   "reference_clip": "NIA_SL_SEN0139_REAL01_F",
+   "reference_seconds": [
+    1.75,
+    2.25
+   ],
+   "reference_sentence": "약 가깝다"
+  },
+  {
+   "gloss": "지갑",
+   "category": "분실",
+   "aihub_sentence_only": true,
+   "reference_clip": "NIA_SL_SEN0470_REAL01_F",
+   "reference_seconds": [
+    1.5,
+    2.4
+   ],
+   "reference_sentence": "지갑 잃어버리다"
+  },
+  {
+   "gloss": "사라지다",
+   "category": "분실",
+   "aihub_word": "WORD1283",
+   "reference_clip": "NIA_SL_WORD1283_REAL01_F"
+  },
+  {
+   "gloss": "물건",
+   "category": "분실",
+   "aihub_sentence_only": true,
+   "reference_clip": "NIA_SL_SEN0322_REAL01_F",
+   "reference_seconds": [
+    1.63,
+    1.9
+   ],
+   "reference_sentence": "물건 잃어버리다"
+  },
+  {
+   "gloss": "괜찮다",
+   "category": "대답",
+   "aihub_word": "WORD1381",
+   "reference_clip": "NIA_SL_WORD1381_REAL01_F"
+  },
+  {
+   "gloss": "모르다",
+   "category": "대답",
+   "aihub_word": "WORD1096",
+   "reference_clip": "NIA_SL_WORD1096_REAL01_F"
+  },
+  {
+   "gloss": "없다",
+   "category": "대답",
+   "aihub_word": "WORD1637",
+   "reference_clip": "NIA_SL_WORD1637_REAL01_F"
+  },
+  {
+   "gloss": "있다",
+   "category": "대답",
+   "aihub_sentence_only": true,
+   "reference_clip": "NIA_SL_SEN0347_REAL01_F",
+   "reference_seconds": [
+    2.58,
+    2.88
+   ],
+   "reference_sentence": "불편하다 있다 신고"
+  },
+  {
+   "gloss": "감사",
+   "category": "대답",
+   "aihub_word": "WORD1290",
+   "reference_clip": "NIA_SL_WORD1290_REAL01_F"
+  },
+  {
+   "gloss": "주다",
+   "category": "대답",
+   "aihub_word": "WORD2394",
+   "reference_clip": "NIA_SL_WORD2394_REAL01_F"
+  },
+  {
+   "gloss": "통역사",
+   "category": "소통",
+   "aihub_word": "WORD0174",
+   "reference_clip": "NIA_SL_WORD0174_REAL01_F"
+  },
+  {
+   "gloss": "가족",
+   "category": "소통",
+   "aihub_word": "WORD1492",
+   "reference_clip": "NIA_SL_WORD1492_REAL01_F"
+  },
+  {
+   "gloss": "글",
+   "category": "소통",
+   "aihub_word": "WORD1590",
+   "reference_clip": "NIA_SL_WORD1590_REAL01_F"
+  },
+  {
+   "gloss": "쓰다",
+   "category": "소통",
+   "aihub_word": "WORD0962",
+   "reference_clip": "NIA_SL_WORD0962_REAL01_F"
+  },
+  {
+   "gloss": "골절",
+   "category": "증상",
+   "aihub_word": "WORD0387",
+   "reference_clip": "NIA_SL_WORD0387_REAL01_F"
+  },
+  {
+   "gloss": "감기",
+   "category": "증상",
+   "aihub_word": "WORD0037",
+   "reference_clip": "NIA_SL_WORD0037_REAL01_F"
+  },
+  {
+   "gloss": "춥다",
+   "category": "증상",
+   "aihub_word": "WORD1248",
+   "reference_clip": "NIA_SL_WORD1248_REAL01_F"
+  },
+  {
+   "gloss": "목마르다",
+   "category": "증상",
+   "aihub_word": "WORD2036",
+   "reference_clip": "NIA_SL_WORD2036_REAL01_F"
+  },
+  {
+   "gloss": "눕다",
+   "category": "몸 상태",
+   "aihub_word": "WORD1138",
+   "reference_clip": "NIA_SL_WORD1138_REAL01_F"
+  },
+  {
+   "gloss": "일어나다",
+   "category": "몸 상태",
+   "aihub_word": "WORD1273",
+   "reference_clip": "NIA_SL_WORD1273_REAL01_F"
+  },
+  {
+   "gloss": "걷다",
+   "category": "몸 상태",
+   "aihub_word": "WORD1391",
+   "reference_clip": "NIA_SL_WORD1391_REAL01_F"
+  },
+  {
+   "gloss": "못하다",
+   "category": "몸 상태",
+   "aihub_word": "WORD1269",
+   "reference_clip": "NIA_SL_WORD1269_REAL01_F"
+  },
+  {
+   "gloss": "농인",
+   "category": "소통",
+   "aihub_word": "WORD0461",
+   "reference_clip": "NIA_SL_WORD0461_REAL01_F"
+  },
+  {
+   "gloss": "장애인",
+   "category": "소통",
+   "aihub_word": "WORD0020",
+   "reference_clip": "NIA_SL_WORD0020_REAL01_F"
+  },
+  {
+   "gloss": "수어",
+   "category": "소통",
+   "aihub_word": "WORD0003",
+   "reference_clip": "NIA_SL_WORD0003_REAL01_F"
+  },
+  {
+   "gloss": "이해",
+   "category": "소통",
+   "aihub_word": "WORD1207",
+   "reference_clip": "NIA_SL_WORD1207_REAL01_F"
+  },
+  {
+   "gloss": "가능",
+   "category": "대답",
+   "aihub_word": "WORD1282",
+   "reference_clip": "NIA_SL_WORD1282_REAL01_F"
+  },
+  {
+   "gloss": "맞다",
+   "category": "대답",
+   "aihub_word": "WORD1174",
+   "reference_clip": "NIA_SL_WORD1174_REAL01_F"
+  },
+  {
+   "gloss": "틀리다",
+   "category": "대답",
+   "aihub_word": "WORD1359",
+   "reference_clip": "NIA_SL_WORD1359_REAL01_F"
+  },
+  {
+   "gloss": "싫다",
+   "category": "대답",
+   "aihub_word": "WORD1385",
+   "reference_clip": "NIA_SL_WORD1385_REAL01_F"
+  },
+  {
+   "gloss": "좋다",
+   "category": "대답",
+   "aihub_word": "WORD0738",
+   "reference_clip": "NIA_SL_WORD0738_REAL01_F"
+  },
+  {
+   "gloss": "죄송",
+   "category": "대답",
+   "aihub_word": "WORD1201",
+   "reference_clip": "NIA_SL_WORD1201_REAL01_F"
+  },
+  {
+   "gloss": "놀라다",
+   "category": "상태",
+   "aihub_word": "WORD1240",
+   "reference_clip": "NIA_SL_WORD1240_REAL01_F"
+  },
+  {
+   "gloss": "노인",
+   "category": "사람",
+   "aihub_word": "WORD2032",
+   "reference_clip": "NIA_SL_WORD2032_REAL01_F"
+  },
+  {
+   "gloss": "엄마",
+   "category": "사람",
+   "aihub_word": "WORD1528",
+   "reference_clip": "NIA_SL_WORD1528_REAL01_F"
+  },
+  {
+   "gloss": "남편",
+   "category": "사람",
+   "aihub_word": "WORD1531",
+   "reference_clip": "NIA_SL_WORD1531_REAL01_F"
+  },
+  {
+   "gloss": "아내",
+   "category": "사람",
+   "aihub_word": "WORD1524",
+   "reference_clip": "NIA_SL_WORD1524_REAL01_F"
+  },
+  {
+   "gloss": "친구",
+   "category": "사람",
+   "aihub_word": "WORD1204",
+   "reference_clip": "NIA_SL_WORD1204_REAL01_F"
+  },
+  {
+   "gloss": "피해자",
+   "category": "긴급",
+   "aihub_word": "WORD2008",
+   "reference_clip": "NIA_SL_WORD2008_REAL01_F"
+  }
+ ]
+}

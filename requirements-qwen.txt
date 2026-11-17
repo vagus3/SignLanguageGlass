@@ -1,0 +1,6 @@
+# 안경 시점 Qwen 인식(--recognize qwen), 문장 모델(--compose-llm)과 그 학습(src.train_qwen,
+# src.train_composer, src.eval_qwen)에 필요합니다. 기본 실행(requirements.txt)에는 필요 없습니다.
+# 처음 실행할 때 Hugging Face 에서 Qwen 모델을 내려받습니다 (0.5B 약 1GB, 3B 약 6GB).
+-r requirements-train.txt
+transformers==4.51.3
+peft==0.15.2

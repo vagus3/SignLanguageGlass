@@ -17,6 +17,7 @@
 지연을 만드는 최대 원인은 큐에 프레임이 쌓이는 것입니다.
 그래서 비전 프레임 큐는 maxsize=1이고, 오디오 큐도 짧게 제한합니다.
 """
+import json
 import sys
 import time
 import queue
@@ -60,12 +61,24 @@ def draw_segment_overlay(cv2, frame, recorder, segmenter):
     cv2.putText(frame, mode + state, (w - 200, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
 
 
+def emit_latest(out_q, item):
+    """큐를 쌓지 않고 항상 최신 항목만 유지."""
+    try:
+        out_q.put_nowait(item)
+    except queue.Full:
+        try:
+            out_q.get_nowait()
+            out_q.put_nowait(item)
+        except queue.Empty:
+            pass
+
+
 # 비전 스레드
 class VisionThread(threading.Thread):
     def __init__(self, out_q, enable_sign=True, stats=None, camera_index=None,
                  segment_recorder=None, pose_3d=False, segmenter=None, segment_events=None,
                  track_face=True, preview_hands=False, predictor=None, word_events=None,
-                 track_mouths=False):
+                 track_mouths=False, hands_only=False, show_landmarks=False):
         # daemon 을 클래스 속성으로 두면 Thread.daemon 프로퍼티를 가려서
         # 내부 _daemonic 플래그와 어긋납니다. 생성자로 넘겨야 안전합니다.
         super().__init__(name="vision", daemon=True)
@@ -74,6 +87,9 @@ class VisionThread(threading.Thread):
         self.predictor = predictor
         self.word_events = word_events if word_events is not None else queue.Queue()
         self.preview_hands = preview_hands
+        self.show_landmarks = show_landmarks
+        # 안경 시점: 얼굴·어깨가 안 보이므로 Holistic 대신 손만 찾습니다 (src/glasses_hands.py).
+        self.hands_only = hands_only
         self.camera_index = camera_index
         self.segment_recorder = segment_recorder
         self.pose_3d = pose_3d
@@ -104,10 +120,14 @@ class VisionThread(threading.Thread):
             self.out.put(("error", "카메라를 열 수 없습니다"))
             return
 
-        holistic = face_detector = hand_detector = None
+        holistic = face_detector = hand_detector = glasses = None
         try:
+            if self.hands_only and self.segment_recorder is not None:
+                from src.glasses_hands import GlassesHands
+                glasses = GlassesHands()
             holistic = (L.make_holistic(C.MODEL_COMPLEXITY)
-                        if self.enable_sign or self.segment_recorder is not None else None)
+                        if (self.enable_sign or self.segment_recorder is not None)
+                        and glasses is None else None)
             # Recognition and its preview must use the same landmarks. A separate
             # Hands graph is only useful when sign recognition is disabled.
             hand_detector = (L.make_preview_hands()
@@ -144,6 +164,8 @@ class VisionThread(threading.Thread):
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 rgb.flags.writeable = False
                 res = holistic.process(rgb) if holistic is not None else None
+                if self.show_landmarks and res is not None:
+                    L.draw_debug(frame, res, include_pose=False)
                 t_hol = clock.now()
                 if holistic is not None:
                     st.add("holistic", (t_hol - t_cap) * 1000)
@@ -169,8 +191,15 @@ class VisionThread(threading.Thread):
 
                 # Capture every processed frame before the lossy preview queue.
                 if self.segment_recorder is not None:
-                    points, mask = from_mediapipe(res)
-                    world = world_from_mediapipe(res, (w, h)) if self.pose_3d else (None, None)
+                    if glasses is not None:
+                        t_hands = clock.now()
+                        points, mask, hand_res = glasses.process(rgb)
+                        st.add("hands", (clock.now() - t_hands) * 1000)
+                        L.draw_hand_preview(frame, hand_res)
+                        world = (None, None)
+                    else:
+                        points, mask = from_mediapipe(res)
+                        world = world_from_mediapipe(res, (w, h)) if self.pose_3d else (None, None)
                     self.segment_recorder.add(points, mask, t_cap, (w, h), *world)
                     if self.segmenter is not None:
                         event = self.segmenter.update(points, mask, t_cap,
@@ -237,17 +266,12 @@ class VisionThread(threading.Thread):
                 face_detector.close()
             if hand_detector is not None:
                 hand_detector.close()
+            if glasses is not None:
+                glasses.close()
 
     def _emit(self, item):
         """큐를 쌓지 않고 항상 최신 프레임만 유지."""
-        try:
-            self.out.put_nowait(item)
-        except queue.Full:
-            try:
-                self.out.get_nowait()
-                self.out.put_nowait(item)
-            except queue.Empty:
-                pass
+        emit_latest(self.out, item)
 
 
 class FaceThread(threading.Thread):
@@ -316,14 +340,30 @@ class FaceThread(threading.Thread):
                 detector.close()
 
     def _emit(self, item):
-        try:
-            self.out.put_nowait(item)
-        except queue.Full:
-            try:
-                self.out.get_nowait()
-                self.out.put_nowait(item)
-            except queue.Empty:
-                pass
+        emit_latest(self.out, item)
+
+
+def show_debug_view(cv2, payload, gate, recorder, segmenter):
+    """--debug 카메라 창: 처리 속도, 후보 단어, 마이크 차단, 구간 상태."""
+    v = payload["frame"]
+    if v.shape[1] > C.DEBUG_PREVIEW_W:     # smaller window, cheaper to draw
+        scale = C.DEBUG_PREVIEW_W / v.shape[1]
+        v = cv2.resize(v, (C.DEBUG_PREVIEW_W, int(v.shape[0] * scale)),
+                       interpolation=cv2.INTER_AREA)
+    v = cv2.flip(v, 1) if C.MIRROR_PREVIEW else v.copy()
+    txt = (f"{payload['fps']:.0f}fps  vis {payload['ms_vision']:.0f}ms  "
+           f"Hands: {payload['hand_count']}/2")
+    if recorder is None:
+        txt += (f"  inf {payload['ms_infer']:.0f}ms  "
+                f"{payload['raw']} {payload['conf']:.2f}")
+    cv2.putText(v, txt, (16, 36), cv2.FONT_HERSHEY_SIMPLEX,
+                0.7, (0, 255, 0), 2)
+    if not gate.is_open():
+        cv2.putText(v, "MIC MUTED (TTS)", (16, 70),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+    if recorder is not None:
+        draw_segment_overlay(cv2, v, recorder, segmenter)
+    cv2.imshow("camera (debug)", v)
 
 
 def speak(sentence, tts, stats=None, word_t=0.0, show=None):
@@ -342,8 +382,7 @@ def speak(sentence, tts, stats=None, word_t=0.0, show=None):
         tts.say(sentence, origin_t=word_t)
 
 
-# main
-def main():
+def build_parser():
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-stt", action="store_true")
     ap.add_argument("--stt", choices=["sherpa", "vosk"], default=None,
@@ -362,11 +401,27 @@ def main():
                     help="cloud/device: SPACE/c 또는 표준입력 start/stop/cancel로 수어 구간 지정")
     ap.add_argument("--pose-3d", action="store_true",
                     help="cloud/device: 3D 좌표도 사용 (3D 모델일 때)")
-    ap.add_argument("--recognize", choices=["server", "device"], default="server",
+    ap.add_argument("--recognize", choices=["server", "device", "local", "qwen"], default="server",
                     help="cloud: server=좌표를 보내 서버가 인식(기준선 A), "
-                         "device=이 기기에서 ONNX로 인식해 글로스만 전송(비교 경로 B)")
+                         "device=이 기기에서 ONNX로 인식해 글로스만 전송(비교 경로 B), "
+                         "local=인식과 문장 선택을 모두 이 기기에서 (서버 불필요)")
+    ap.add_argument("--qwen-model", metavar="DIR",
+                    help="--recognize qwen: src.train_qwen 결과 폴더 (안경 시점 Qwen 미세조정 모델)")
+    ap.add_argument("--compose-llm", metavar="MODEL",
+                    help="--recognize qwen: 목록에 없는 말을 이 문장 모델로 만듦 "
+                         "(예: Qwen/Qwen2.5-3B-Instruct, 이 기기에서 실행)")
     ap.add_argument("--onnx", metavar="PATH",
-                    help="--sign-backend device 또는 --recognize device 의 CTC ONNX")
+                    help="--sign-backend device 또는 --recognize device/local 의 CTC ONNX "
+                         "(tools/export_ctc_onnx.py 결과)")
+    ap.add_argument("--phrases", metavar="PATH", default=None,
+                    help="local: 상황 문장 목록 파일·폴더, 쉼표로 여러 개 (기본: assets/phrases 전부, "
+                         "'none' 이면 문맥 보정 없음)")
+    ap.add_argument("--phrase-bonus", type=float, default=1.0, metavar="VALUE",
+                    help="local: 문맥 보정 세기 (0=거의 안 함, 클수록 목록 문장으로 기웁니다)")
+    ap.add_argument("--speak-min", type=float, default=0.5, metavar="SCORE",
+                    help="local: 인식 점수가 이 값 이상이면 소리로 말함 (0=항상, 1.01=말하지 않음)")
+    ap.add_argument("--save-segments", metavar="DIR",
+                    help="local: 인식한 구간의 좌표와 결과를 이 폴더에 저장 (문제 진단용)")
     ap.add_argument("--auto-segment", action="store_true",
                     help="cloud/device: 손 움직임으로 수어 구간 자동 시작/종료 (SPACE도 사용 가능)")
     ap.add_argument("--viewpoint", choices=["webcam", "glasses"], default=C.SIGN_VIEWPOINT,
@@ -389,6 +444,8 @@ def main():
                     choices=["preview", "serial", "pi", "null"],
                     help="안경 화면 출력. 기본: 말풍선 창이 있으면 숨김, 없으면 preview")
     ap.add_argument("--debug", action="store_true", help="카메라 뷰도 함께 표시")
+    ap.add_argument("--show-landmarks", action="store_true",
+                    help="기존 영상 창에 Holistic 관절 연결선을 표시")
     ap.add_argument("--video-captions", action=argparse.BooleanOptionalAction, default=None,
                     help="영상 위 말풍선 표시 (카메라가 있으면 기본 활성화)")
     ap.add_argument("--transcript", action="store_true",
@@ -399,6 +456,50 @@ def main():
                     metavar="CSV",
                     help="지연을 구간별로 측정해 종료 시 p50/p95 를 출력합니다. "
                          "경로를 주면 실행 전체의 원본 표본을 CSV 로 계속 기록합니다.")
+    return ap
+
+
+def shutdown(cv2, a, stats, display, recorder, cloud, vision, face_thread, stt, tts):
+    """스레드와 장치를 정해진 순서로 닫고, --stats 결과를 출력합니다."""
+    if recorder is not None:
+        recorder.cancel()
+    if cloud is not None:
+        cloud.stop()
+        cloud.join(timeout=2.0)
+    # 비전 스레드는 카메라와 Holistic 을 들고 있습니다. 기다리지 않고
+    # 프로세스를 내리면 카메라 장치가 열린 채로 남아, 다음 실행에서
+    # "카메라를 열 수 없습니다" 가 뜹니다(macOS 에서 특히 잘 납니다).
+    if vision:
+        vision.stop()
+        vision.join(timeout=2.0)
+        if vision.is_alive():
+            print("[main] 비전 스레드가 시간 안에 끝나지 않았습니다")
+    if face_thread:
+        face_thread.stop()
+        face_thread.join(timeout=2.0)
+        if face_thread.is_alive():
+            print("[main] 얼굴 스레드가 시간 안에 끝나지 않았습니다")
+    if stt:
+        stt.stop()
+        stt.join(timeout=2.0)
+    if tts:
+        tts.stop()
+        tts.join(timeout=2.0)
+    display.close()
+    cv2.destroyAllWindows()
+    print("종료")
+    if a.stats is not None:
+        print(stats.report())
+        if a.stats:
+            saved = stats.save_csv(a.stats)
+            if saved:
+                print(f"  원본 표본 저장(실행 전체): {saved}")
+        stats.close()
+
+
+# main
+def main():
+    ap = build_parser()
     a = ap.parse_args()
     if a.test_tts is not None:
         if a.no_tts:
@@ -411,10 +512,17 @@ def main():
         value = getattr(a, name)
         if value is not None and not math.isfinite(value):
             ap.error(f"--{name} 에는 유한한 숫자가 필요합니다")
-    if (a.sign_backend == "device" or a.recognize == "device") and not a.onnx:
-        ap.error("--sign-backend device / --recognize device 에는 --onnx 가 필요합니다")
+    if a.recognize == "qwen" and not a.qwen_model:
+        ap.error("--recognize qwen 에는 --qwen-model 이 필요합니다")
+    if a.sign_backend == "device" and a.recognize in ("local", "qwen"):
+        ap.error("--sign-backend device 는 --recognize local/qwen 과 함께 쓸 수 없습니다 "
+                 "(device 는 단어를 바로 발화, local/qwen 은 기기에서 문장까지 만듭니다)")
+    if (a.sign_backend == "device" or a.recognize in ("device", "local")) and not a.onnx:
+        ap.error("--sign-backend device / --recognize device·local 에는 --onnx 가 필요합니다")
     if a.sign_mapping and (a.sign_backend != "device" or a.no_sign):
         ap.error("--sign-mapping 은 --sign-backend device 에서만 사용합니다")
+    if not math.isfinite(a.phrase_bonus) or a.phrase_bonus < 0:
+        ap.error("--phrase-bonus 에는 0 이상의 숫자가 필요합니다")
     # 스레드 시작 전에 공용 설정에 반영해 두 카메라 및 재연결에도 적용합니다.
     if a.exposure is not None or a.gain is not None:
         C.CAM_MANUAL_EXPOSURE = True
@@ -466,27 +574,55 @@ def main():
     caption_book = (CaptionBook(C.CAPTION_HOLD_SEC, C.CAPTION_PARTIAL_TIMEOUT, C.FACE_LOST_SEC)
                     if speakers is not None else None)
 
-    cloud = recorder = segmenter = controller = None
+    cloud = recorder = segmenter = controller = local_sign = None
     commands = queue.Queue()
     if a.sign_backend in ("cloud", "device") and not a.no_sign:
         from src.cloud_sign import CloudClient, CloudWorker, GlossClient, SegmentRecorder
         try:
-            if a.sign_backend == "device" or a.recognize == "device":
+            if a.sign_backend == "device" or a.recognize in ("device", "local"):
                 from src.ctc_runtime import OnnxRecognizer
                 from src.pose_sequence import needs_world
                 device = OnnxRecognizer(a.onnx)
                 if needs_world(device.feature_set) != a.pose_3d:
                     ap.error(f"{a.onnx} 는 {device.feature_set} 특징입니다. "
                              f"--pose-3d 는 3D 모델과만 같이 씁니다")
-                if a.sign_backend == "device":
-                    from src.device_sign import DeviceSignClient
-                    client = DeviceSignClient(device, mapping=a.sign_mapping)
-                    print(f"[수어] 기기 인식 → 단어 발화: {len(device.labels) - 1}개 단어, "
-                          f"신뢰도 기준={client.threshold:.2f}. 문장 번역 없이 단어를 읽습니다.")
-                else:
-                    client = GlossClient(device)
-                    print(f"[cloud] 기기 인식(B): {device.feature_set}, "
-                          f"{len(device.labels) - 1}개 글로스, 서버에는 글로스만 보냅니다")
+            if a.sign_backend == "device":
+                from src.device_sign import DeviceSignClient
+                client = DeviceSignClient(device, mapping=a.sign_mapping)
+                print(f"[수어] 기기 인식 → 단어 발화: {len(device.labels) - 1}개 단어, "
+                      f"신뢰도 기준={client.threshold:.2f}. 문장 번역 없이 단어를 읽습니다.")
+            elif a.recognize == "local":
+                from src.local_sign import LocalSignClient, load_phrases
+                phrases, dropped = [], 0
+                phrase_path = Path(a.phrases or C.ASSET_DIR / "phrases")
+                if (a.phrases or "").lower() != "none" and (a.phrases or phrase_path.exists()):
+                    phrases, dropped = load_phrases(phrase_path, device.labels)
+                client = local_sign = LocalSignClient(device, phrases, bonus=a.phrase_bonus,
+                                                      save_dir=a.save_segments,
+                                                      speak_min=a.speak_min)
+                print(f"[수어] 기기 단독 인식: {len(device.labels) - 1}개 단어, 상황 문장 "
+                      f"{len(phrases)}개" + (f" (모델에 없는 단어라 제외 {dropped}개)"
+                                            if dropped else "") + ", 서버를 쓰지 않습니다")
+            elif a.recognize == "qwen":
+                from src.qwen_sign import QwenSignClient
+                composer = None
+                if a.compose_llm:
+                    from src.translation import LocalTranslator
+                    examples = json.loads((C.ASSET_DIR / "glasses" / "phrases.json").read_text(
+                        encoding="utf-8"))
+                    composer = LocalTranslator(a.compose_llm, examples=examples)
+                    print(f"[수어] 문장 모델: {a.compose_llm} (이 기기에서 실행)")
+                client = local_sign = QwenSignClient(a.qwen_model, speak_min=a.speak_min,
+                                                     save_dir=a.save_segments,
+                                                     composer=composer)
+                print(f"[수어] 안경 시점 Qwen 인식: {len(client.model.glosses)}개 단어, "
+                      f"답 {len(client.options)}개 중 선택, 서버를 쓰지 않습니다"
+                      + ("" if a.viewpoint == "glasses" else
+                         " (경고: 안경 시점으로 학습한 모델입니다. --viewpoint glasses 권장)"))
+            elif a.recognize == "device":
+                client = GlossClient(device)
+                print(f"[cloud] 기기 인식(B): {device.feature_set}, "
+                      f"{len(device.labels) - 1}개 글로스, 서버에는 글로스만 보냅니다")
             else:
                 client = CloudClient()
             cloud = CloudWorker(client, stats=stats)
@@ -521,8 +657,11 @@ def main():
                            camera_index=sign_index, segment_recorder=recorder,
                            pose_3d=a.pose_3d, segmenter=segmenter, segment_events=commands,
                            track_face=not a.fixed_caption and not separate_face,
-                           preview_hands=a.debug, predictor=predictor, word_events=word_events,
-                           track_mouths=speakers is not None)
+                           preview_hands=a.debug and a.viewpoint != "glasses",
+                           predictor=predictor, word_events=word_events,
+                           track_mouths=speakers is not None,
+                           hands_only=a.viewpoint == "glasses",
+                           show_landmarks=a.show_landmarks)
               if need_vision else None)
     if vision:
         vision.start()
@@ -590,8 +729,11 @@ def main():
     last_sign_log = float("-inf")
     last_face, last_size = None, (C.CAM_W, C.CAM_H)
 
-    has_window = bool(video_enabled or transcript_open or (a.debug and (vision or face_thread))
-                      or getattr(display, "has_window", False))
+    def window_open():
+        return bool(video_enabled or transcript_open or (a.debug and (vision or face_thread))
+                    or getattr(display, "has_window", False))
+
+    has_window = window_open()
 
     def transcript_mouse(event, x, y, flags, param):
         if event == cv2.EVENT_MOUSEWHEEL:
@@ -663,25 +805,7 @@ def main():
                                  f"(확정 기준={C.CONF_THRESHOLD:.2f})")
                         print(f"[수어 상태] 인식용 손={payload.get('sign_hand_count', 0)}/2 "
                               f"{state}", flush=True)
-                    v = payload["frame"]
-                    if v.shape[1] > C.DEBUG_PREVIEW_W:     # smaller window, cheaper to draw
-                        scale = C.DEBUG_PREVIEW_W / v.shape[1]
-                        v = cv2.resize(v, (C.DEBUG_PREVIEW_W, int(v.shape[0] * scale)),
-                                       interpolation=cv2.INTER_AREA)
-                    v = cv2.flip(v, 1) if C.MIRROR_PREVIEW else v.copy()
-                    txt = (f"{payload['fps']:.0f}fps  vis {payload['ms_vision']:.0f}ms  "
-                           f"Hands: {payload['hand_count']}/2")
-                    if recorder is None:
-                        txt += (f"  inf {payload['ms_infer']:.0f}ms  "
-                                f"{payload['raw']} {payload['conf']:.2f}")
-                    cv2.putText(v, txt, (16, 36), cv2.FONT_HERSHEY_SIMPLEX,
-                                0.7, (0, 255, 0), 2)
-                    if not gate.is_open():
-                        cv2.putText(v, "MIC MUTED (TTS)", (16, 70),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
-                    if recorder is not None:
-                        draw_segment_overlay(cv2, v, recorder, segmenter)
-                    cv2.imshow("camera (debug)", v)
+                    show_debug_view(cv2, payload, gate, recorder, segmenter)
             except queue.Empty:
                 pass
 
@@ -769,6 +893,8 @@ def main():
                             anchor = captions.anchor(track, clock.now())
                             history.append(event, anchor.track_id if anchor else None)
                         print(f"[음성] {event.text}")
+                        if local_sign is not None:      # 상대의 말은 다음 수어의 문맥입니다
+                            local_sign.hear(event.text)
 
             # ---- HUD ----
             # 실물 HUD 는 한 장에 더 최근 내용을, 노트북 미리보기는 두 영역을 함께.
@@ -830,9 +956,7 @@ def main():
             # 창이 하나도 없으면 waitKey 가 키를 못 받고 루프가 CPU 를 100%
             # 태웁니다(--display null 이고 --debug 도 아닐 때). 그땐 sleep 으로
             # 양보하고 Ctrl+C 로 종료하게 둡니다.
-            has_window = bool(video_enabled or transcript_open
-                              or (a.debug and (vision or face_thread))
-                              or getattr(display, "has_window", False))
+            has_window = window_open()
             if has_window:
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
@@ -857,40 +981,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        if recorder is not None:
-            recorder.cancel()
-        if cloud is not None:
-            cloud.stop()
-            cloud.join(timeout=2.0)
-        # 비전 스레드는 카메라와 Holistic 을 들고 있습니다. 기다리지 않고
-        # 프로세스를 내리면 카메라 장치가 열린 채로 남아, 다음 실행에서
-        # "카메라를 열 수 없습니다" 가 뜹니다(macOS 에서 특히 잘 납니다).
-        if vision:
-            vision.stop()
-            vision.join(timeout=2.0)
-            if vision.is_alive():
-                print("[main] 비전 스레드가 시간 안에 끝나지 않았습니다")
-        if face_thread:
-            face_thread.stop()
-            face_thread.join(timeout=2.0)
-            if face_thread.is_alive():
-                print("[main] 얼굴 스레드가 시간 안에 끝나지 않았습니다")
-        if stt:
-            stt.stop()
-            stt.join(timeout=2.0)
-        if tts:
-            tts.stop()
-            tts.join(timeout=2.0)
-        display.close()
-        cv2.destroyAllWindows()
-        print("종료")
-        if a.stats is not None:
-            print(stats.report())
-            if a.stats:
-                saved = stats.save_csv(a.stats)
-                if saved:
-                    print(f"  원본 표본 저장(실행 전체): {saved}")
-            stats.close()
+        shutdown(cv2, a, stats, display, recorder, cloud, vision, face_thread, stt, tts)
 
 
 if __name__ == "__main__":
