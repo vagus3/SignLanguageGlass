@@ -89,7 +89,8 @@ def main():
     held = pairs[:max(1, int(len(pairs) * args.holdout))]
     train_pairs = pairs[len(held):]
     vocabulary = json.loads((ROOT / "assets/glasses/vocabulary.json").read_text(encoding="utf-8"))
-    glossary = glasses_glossary(vocabulary, phrases)
+    # 평가는 덧붙인 단어까지 세는 엄격한 검사로 (앱은 덧붙임을 허용하지만 비교 기준은 유지).
+    glossary = glasses_glossary(vocabulary, phrases, strict_additions=True)
     # 예시 문장은 학습 짝에서만 고릅니다 (확인용 짝의 답을 보여 주지 않음).
     translator = LocalTranslator(args.base, examples=train_pairs)
     translator.llm.to(torch.bfloat16)

@@ -11,7 +11,8 @@ CloudWorker 가 쓰는 클라이언트(payload, translate, timeout)와 같은 �
 
 composer(문장 모델, 예: src.translation.LocalTranslator 의 Qwen2.5-3B)를 주면, 목록 문장이
 맞지 않을 때 단어 판정층이 본 단어와 상대가 한 말로 새 문장을 만듭니다
-(src.translation.compose: 숫자·부정·사람이 바뀌면 거르고, 실패하면 소리 없는 미리보기).
+(src.translation.compose). 맥락으로 보탠 말은 그대로 소리로 내고, 숫자·부정·사람이 바뀌면
+거릅니다 (걸리면 소리 없는 미리보기).
 """
 import json
 from pathlib import Path
@@ -28,15 +29,19 @@ ROOT = Path(__file__).resolve().parents[1]
 REVIEWER = "팀 작성 (수어 전문가 검수 전)"
 
 
-def glasses_glossary(vocabulary, phrases):
-    """안경 단어의 뜻(단어 그대로)과 상황 문장. 문장 모델 결과의 보조 검사에 씁니다."""
+def glasses_glossary(vocabulary, phrases, strict_additions=False):
+    """안경 단어의 뜻(단어 그대로)과 상황 문장. 문장 모델 결과의 보조 검사에 씁니다.
+
+    앱에서는 맥락으로 보탠 말("빨리 도와주세요" 등)을 막지 않고 소리로 냅니다. 뜻을 뒤집는
+    변화(부정이 빠짐, 사람·숫자가 바뀜)만 거릅니다. strict_additions=True 는 학습 평가용으로,
+    입력에 없는 다른 단어가 끼어든 문장을 따로 셉니다 (src.train_composer)."""
     from src.translation import Glossary
     meanings = {w["gloss"]: w["gloss"] for w in vocabulary["words"]}
     kinds = {g: "negation" for g in ("못하다", "없다") if g in meanings}
     kinds.update({g: "person" for g in ("엄마", "남편", "아내", "친구") if g in meanings})
     sentences = [{"glosses": p["glosses"], "text": p["text"], "reviewed_by": REVIEWER}
                  for p in phrases if all(g in meanings for g in p["glosses"])]
-    return Glossary(meanings, kinds=kinds, sentences=sentences, strict_additions=True)
+    return Glossary(meanings, kinds=kinds, sentences=sentences, strict_additions=strict_additions)
 
 
 class QwenSignClient:

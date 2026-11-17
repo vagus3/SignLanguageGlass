@@ -127,8 +127,10 @@ def generate(model, tokenizer, items, device, max_new_tokens=24):
     picked, logps = [], []
     for _ in range(max_new_tokens):
         position = (mask.cpu().cumsum(1) - 1).clamp(min=0).to(device)
-        logits = model.llm(inputs_embeds=embeds, attention_mask=mask,
-                           position_ids=position).logits[:, -1].float()
+        # 마지막 위치의 확률만 필요하므로 logits_to_keep=1 (전체 위치 x 어휘 15만 개를 만들면
+        # 배치 16개에서 메모리 수 GB 를 씁니다)
+        logits = model.llm(inputs_embeds=embeds, attention_mask=mask, position_ids=position,
+                           logits_to_keep=1).logits[:, -1].float()
         logp = logits.log_softmax(-1)
         token = logp.argmax(-1)
         token = torch.where(finished, torch.full_like(token, eos), token)
@@ -176,6 +178,12 @@ def evaluate(model, tokenizer, items, device, batch=16):
                                       lambda r: r["output"] == r["reference"]),
               "ctc_exact": rate(lambda r: True, lambda r: r["ctc"] == r["glosses"])}
     return report, rows
+
+
+def sentence_manifests():
+    """문장 구간 파일: 학습용 묶음들 + 검증 수어자(REAL17, REAL18) 문장."""
+    return sorted(glob.glob(str(ROOT / "data/processed/aihub_sentences/*/manifest.json"))
+                  + glob.glob(str(ROOT / "data/processed/aihub_sentences_val/manifest.json")))
 
 
 def fixed_items(composer, signers, count, seed=1234):
@@ -251,7 +259,14 @@ def train(model, tokenizer, composer, *, steps, batch, device, val_items=(), log
         model.train()
         items = [composer.sample(rng) for _ in range(batch)]
         embeds, mask, labels, ctc, lengths = batch_inputs(model, tokenizer, items, device)
-        lm = model.llm(inputs_embeds=embeds, attention_mask=mask, labels=labels).loss
+        # 정답 글자 위치의 어휘 확률만 계산합니다. llm(labels=...) 는 모든 위치 x 어휘 15만 개의
+        # 확률을 만들어 메모리를 수 GB 쓰고 단계마다 모양이 달라 MPS 메모리가 계속 불어납니다
+        # (같은 손실: 정답 글자 평균 교차 엔트로피).
+        base = model.llm.get_base_model() if hasattr(model.llm, "get_base_model") else model.llm
+        hidden = base.model(inputs_embeds=embeds, attention_mask=mask).last_hidden_state
+        keep = labels[:, 1:] != -100
+        logits = base.lm_head(hidden[:, :-1][keep]).float()
+        lm = nn.functional.cross_entropy(logits, labels[:, 1:][keep])
         flat, target_lengths = ctc_targets(model, items)
         aux = ctc_loss(ctc.float().cpu(), flat, lengths, target_lengths)
         loss = lm + ctc_weight * aux.to(lm.device)
@@ -260,6 +275,8 @@ def train(model, tokenizer, composer, *, steps, batch, device, val_items=(), log
         torch.nn.utils.clip_grad_norm_(lora + pose, 1.0)
         optimizer.step()
         schedule.step()
+        if step % 20 == 0 and str(device).startswith("mps"):
+            torch.mps.empty_cache()      # 단계마다 입력 길이가 달라 맥 GPU 가 메모리를 쌓아 둡니다
         if step % 25 == 0 or step == 1:
             log(f"step={step} loss={float(lm):.3f} ctc={float(aux):.3f} "
                 f"{(clock.now() - started) / step:.2f}s/step")
@@ -378,7 +395,7 @@ def main():
     rows = load_clips(ROOT / "data/raw/aihub103_3d",
                       json.loads((ROOT / "data/processed/word3d_ids.json").read_text()),
                       json.loads((ROOT / "data/processed/word3d_intervals.json").read_text()),
-                      sorted(glob.glob(str(ROOT / "data/processed/aihub_sentences/*/manifest.json"))),
+                      sentence_manifests(),
                       vocabulary)
     held = {s for s in args.val_signers.split(",") if s}
     train_rows = [r for r in rows if r["signer"] not in held]

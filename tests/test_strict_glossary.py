@@ -32,4 +32,13 @@ assert compose(["엄마", "119", "부르다"], strict, Fixed("119를 불러 주�
 # Without strict_additions the old behaviour is unchanged.
 loose = Glossary(meanings)
 assert compose(["119", "부르다"], loose, Fixed("쓰러졌어요. 119를 불러 주세요.")).status == "ok"
+# The app's glasses glossary speaks context additions but still blocks meaning flips.
+from src.qwen_sign import glasses_glossary
+vocab = {"words": [{"gloss": g} for g in meanings]}
+app = glasses_glossary(vocab, [])
+made = compose(["엄마", "119", "부르다"], app, Fixed("엄마가 쓰러졌어요. 119를 불러 주세요."))
+assert made.status == "ok" and made.source == "language_model", made
+assert compose(["걷다", "못하다"], app, Fixed("걸어요.")).status == "fallback"
+assert compose(["엄마", "119", "부르다"], app, Fixed("119를 불러 주세요.")).status == "fallback"
+assert glasses_glossary(vocab, [], strict_additions=True).strict_additions
 print("[OK] strict glossary: added words rejected, context passed, reviewed and negation kept")
