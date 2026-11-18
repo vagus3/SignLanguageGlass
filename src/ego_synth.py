@@ -105,7 +105,12 @@ def load_clips(root, word_ids, word_intervals, sentence_manifests, vocabulary):
     반환 행: {"id", "signer", "glosses", "intervals", "pose", "left", "right", "frame"}
     """
     root = Path(root)
-    gloss_of = {w["aihub_word"]: w["gloss"] for w in vocabulary["words"] if w.get("aihub_word")}
+    # 같은 단어가 AI Hub 에 번호 둘로 들어 있으면(예: 없다 WORD1637·WORD1384) aihub_word_extra 로 함께 씁니다.
+    gloss_of = {}
+    for w in vocabulary["words"]:
+        for number in [w.get("aihub_word"), *w.get("aihub_word_extra", [])]:
+            if number:
+                gloss_of[number] = w["gloss"]
     wanted = {w["gloss"] for w in vocabulary["words"]}
     rows = []
     for path in sorted((root / "word").glob("*/*.npz")):

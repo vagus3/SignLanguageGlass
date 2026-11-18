@@ -26,8 +26,10 @@ class AudioBlock:
 
 
 class SpeakerAudioRouter:
-    def __init__(self, decoder, publish, speakers, rate=16000, vad=None):
+    def __init__(self, decoder, publish, speakers, rate=16000, vad=None, only_on_screen=False):
         self.decoder, self.publish, self.speakers, self.rate = decoder, publish, speakers, rate
+        # True: 입이 움직인 얼굴이 없는 소리는 받아쓰지 않습니다 (화면 밖 사람, TV 소리).
+        self.only_on_screen = only_on_screen
         if vad is None:
             import webrtcvad
             vad = webrtcvad.Vad(2)
@@ -78,6 +80,11 @@ class SpeakerAudioRouter:
         for pcm, start, end, speech in slices:
             if speech:
                 owner = self.speakers.resolve((start + end) / 2)
+                if self.only_on_screen and owner is None:
+                    # 말하는 도중 입이 잠깐 안 잡힌 것은 이어서 받고, 새로 시작하는 소리만 거릅니다.
+                    if self.start is None:
+                        continue
+                    owner = self.owner
                 if self.start is not None and owner != self.owner:
                     self.finish()  # A is finalized before ANY of B's samples enter STT.
                 if self.start is None:

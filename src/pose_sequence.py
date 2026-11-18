@@ -349,3 +349,6 @@ FEATURE_SETS = {name: _selector(blocks) for name, blocks in FEATURE_PRESETS.item
 # A new identifier prevents silently changing the meaning of old 331-D weights.
 from src.mediapipe_features import features as _mediapipe_features
 FEATURE_SETS["mediapipe_body_v1"] = (_mediapipe_features, FEATURE_DIM)
+# 안경 시점용: 손 위치·속도를 구간 안에서 상대값으로 (같은 331차원, 새 이름으로 구분).
+from src.ego_features import features_relative as _ego_relative  # noqa: E402
+FEATURE_SETS["ego_relative_v1"] = (_ego_relative, FEATURE_DIM)
