@@ -269,11 +269,15 @@ class CloudWorker(threading.Thread):
             if self.pending is not None:
                 return False
             segment_id = uuid.uuid4().hex
-            self.pending = segment_id
-            self.deadline = clock.now() + self.client.timeout
+            deadline = clock.now() + self.client.timeout
             # The body is built on the worker thread: packing (path A) or device
             # recognition (path B) must not stall the camera/HUD loop.
-            self.jobs.put_nowait((sequence, segment_id, origin_t, self.deadline))
+            try:
+                self.jobs.put_nowait((sequence, segment_id, origin_t, deadline))
+            except queue.Full:
+                # 앞 요청이 아직 일꾼을 붙잡고 있고 대기열도 찼습니다: 거절하고 앱은 계속 돕니다.
+                return False
+            self.pending, self.deadline = segment_id, deadline
             return True
 
     def _payload(self, sequence, segment_id):

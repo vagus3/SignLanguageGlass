@@ -41,5 +41,21 @@ import time
 time.sleep(0.3)
 item = worker.poll()
 assert item is None or item[0]["status"] == "expired", item
+# While the stuck request still holds the worker, a second one waits in the queue and a
+# third is refused instead of raising (queue.Full) and killing the app loop.
+client2 = Stuck()
+w2 = CloudWorker(client2)
+w2.GRACE = 0.0
+w2.start()
+assert w2.submit(Seq(), 0.0)
+time.sleep(0.1)                      # worker takes job 1 and blocks inside translate
+assert not w2.busy
+assert w2.submit(Seq(), 0.0)         # job 2 waits in the queue
+time.sleep(0.1)
+assert not w2.busy
+assert w2.submit(Seq(), 0.0) is False, "queue full: refused, no exception"
+assert not w2.busy and w2.pending is None
+client2.release.set()
+w2.stop()
 worker.stop()
 print("[OK] watchdog: a stuck local recognition is released after its deadline")
