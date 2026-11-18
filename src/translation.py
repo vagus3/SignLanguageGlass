@@ -40,10 +40,15 @@ class Glossary:
     Checkpoint label order is never changed here; glosses are looked up by id.
     """
 
-    def __init__(self, meanings, *, kinds=None, sentences=(), aihub=None, strict_additions=False):
-        """strict_additions: 생성 문장에 입력하지 않은 다른 단어(이 용어집의 단어)가 나오면
+    def __init__(self, meanings, *, kinds=None, sentences=(), aihub=None, strict_additions=False,
+                 stems=None):
+        """stems: {단어: 문장에 나와야 하는 글자} — 있으면 입력 단어가 문장에서 빠진 것도 거릅니다.
+        활용(아프다 -> 아파요) 때문에 단어마다 따로 정합니다 (learn_stems 로 검수된 짝에서 구함).
+
+        strict_additions: 생성 문장에 입력하지 않은 다른 단어(이 용어집의 단어)가 나오면
         거릅니다. 단어가 정해진 안경 응급 어휘처럼 '하지 않은 말'이 위험한 곳에서 씁니다."""
         self.strict_additions = strict_additions
+        self.stems = dict(stems or {})
         self.meanings = dict(meanings)
         self.kinds = dict(kinds or {})
         self.aihub = dict(aihub or {})
@@ -141,6 +146,10 @@ class Glossary:
         for g in glosses:
             if self.kinds.get(g) in ("person", "place", "number") and self.meanings[g] not in text:
                 issues.append(f"{self.kinds[g]}:{g}")
+        for g in glosses:
+            stem = self.stems.get(g)
+            if stem and stem not in text:
+                issues.append(f"dropped:{g}")
         if self.strict_additions:
             used = set(words)
             for gloss, meaning in self.meanings.items():
@@ -151,6 +160,22 @@ class Glossary:
                 if len(stem) >= 2 and stem in text:
                     issues.append(f"added:{gloss}")
         return issues
+
+
+def learn_stems(meanings, pairs, floor=1.0):
+    """단어마다, 그 단어가 든 짝의 문장에 floor 비율 이상 나타나는 가장 긴 앞부분을 구합니다.
+    (병원 -> 병원, 아프다 -> 아, 도와주다 -> 도와). 짝이 3개 미만인 단어는 정하지 않습니다."""
+    stems = {}
+    for gloss, meaning in meanings.items():
+        texts = [p["text"] for p in pairs if gloss in p["glosses"]]
+        if len(texts) < 3:
+            continue
+        for n in range(len(meaning), 0, -1):
+            prefix = meaning[:n]
+            if sum(prefix in t for t in texts) >= floor * len(texts):
+                stems[gloss] = prefix
+                break
+    return stems
 
 
 @dataclass(frozen=True)

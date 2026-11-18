@@ -240,6 +240,8 @@ def describe(error):
 
 
 class CloudWorker(threading.Thread):
+    GRACE = 5.0     # 마감 뒤에도 결과를 기다려 주는 여유 (초)
+
     def __init__(self, client=None, stats=None):
         super().__init__(name="cloud-sign", daemon=True)
         self.client = client or CloudClient()
@@ -255,6 +257,11 @@ class CloudWorker(threading.Thread):
     @property
     def busy(self):
         with self.lock:
+            if self.pending is not None and clock.now() > self.deadline + self.GRACE:
+                # 기기 안 인식은 제한시간이 없어서, 느려지면 영원히 '처리 중'에 갇힙니다.
+                # 마감이 지나면 이 요청을 버리고(늦게 오는 결과는 무시) 다음 입력을 받습니다.
+                self.seen.append(self.pending)
+                self.pending = None
             return self.pending is not None
 
     def submit(self, sequence, origin_t):

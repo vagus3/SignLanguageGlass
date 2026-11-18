@@ -28,19 +28,31 @@ ROOT = Path(__file__).resolve().parents[1]
 REVIEWER = "팀 작성 (수어 전문가 검수 전)"
 
 
-def glasses_glossary(vocabulary, phrases, strict_additions=False):
+def _reviewed_pairs(phrases):
+    """단어마다 문장에 나오는 형태를 배울 짝: 문장 구성 초안 + 상황 문장 목록."""
+    path = ROOT / "assets/glasses/compose_pairs_draft.json"
+    pairs = [{"glosses": p["glosses"], "text": p["text"]} for p in phrases]
+    if path.exists():
+        pairs += json.loads(path.read_text(encoding="utf-8"))["pairs"]
+    return pairs
+
+
+def glasses_glossary(vocabulary, phrases, strict_additions=False, check_dropped=True):
     """안경 단어의 뜻(단어 그대로)과 상황 문장. 문장 모델 결과의 보조 검사에 씁니다.
 
     앱에서는 맥락으로 보탠 말("빨리 도와주세요" 등)을 막지 않고 소리로 냅니다. 뜻을 뒤집는
     변화(부정이 빠짐, 사람·숫자가 바뀜)만 거릅니다. strict_additions=True 는 학습 평가용으로,
-    입력에 없는 다른 단어가 끼어든 문장을 따로 셉니다 (src.train_composer)."""
-    from src.translation import Glossary
+    입력에 없는 다른 단어가 끼어든 문장을 따로 셉니다 (src.train_composer).
+    check_dropped: 입력 단어가 문장에서 빠진 것도 거릅니다 (뜻이 줄어든 문장을 소리로 내지 않게)."""
+    from src.translation import Glossary, learn_stems
     meanings = {w["gloss"]: w["gloss"] for w in vocabulary["words"]}
     kinds = {g: "negation" for g in ("못하다", "없다") if g in meanings}
     kinds.update({g: "person" for g in ("엄마", "남편", "아내", "친구") if g in meanings})
     sentences = [{"glosses": p["glosses"], "text": p["text"], "reviewed_by": REVIEWER}
                  for p in phrases if all(g in meanings for g in p["glosses"])]
-    return Glossary(meanings, kinds=kinds, sentences=sentences, strict_additions=strict_additions)
+    stems = learn_stems(meanings, _reviewed_pairs(phrases)) if check_dropped else None
+    return Glossary(meanings, kinds=kinds, sentences=sentences, strict_additions=strict_additions,
+                    stems=stems)
 
 
 class QwenSignClient:
@@ -62,6 +74,8 @@ class QwenSignClient:
         self.options = candidate_texts(self.model, phrases, words)
         self.phrase_texts = {p["text"] for p in phrases}
         self.composer = composer
+        if composer is not None:
+            self.timeout = 90   # 문장 모델이 새 문장을 쓰는 시간까지 (메모리가 부족하면 더 느림)
         self.glossary = glasses_glossary(vocabulary, phrases) if composer is not None else None
         self.speak_min, self.heard_seconds = speak_min, heard_seconds
         self.save_dir = Path(save_dir) if save_dir else None
