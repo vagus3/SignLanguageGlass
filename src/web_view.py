@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """같은 네트워크에서 말풍선 영상을 읽기 전용으로 봅니다."""
+import hmac
 import secrets
 import socket
 import threading
@@ -34,8 +35,12 @@ class WebView:
             def log_message(self, format, *args):
                 pass  # 접속 주소의 토큰을 로그에 남기지 않습니다.
 
+            def _is(self, suffix):
+                # 토큰은 시간이 일정한 비교로 확인합니다.
+                return hmac.compare_digest(self.path.encode(), f"/{view.token}{suffix}".encode())
+
             def do_GET(self):
-                if self.path in (f"/{view.token}", f"/{view.token}/"):
+                if self._is("") or self._is("/"):
                     page = ("<!doctype html><html lang='ko'><head>"
                             "<meta name='viewport' content='width=device-width, initial-scale=1'>"
                             "<meta name='referrer' content='no-referrer'>"
@@ -51,7 +56,7 @@ class WebView:
                     self.send_header("Cache-Control", "no-store")
                     self.end_headers()
                     self.wfile.write(page)
-                elif self.path == f"/{view.token}/stream":
+                elif self._is("/stream"):
                     self._stream()
                 else:
                     self.send_error(404)
@@ -61,6 +66,8 @@ class WebView:
                     if view._closed:
                         return
                     view._viewers += 1
+                    count = view._viewers
+                print(f"[화면 공유] 보는 사람 {count}명 접속", flush=True)
                 try:
                     self.connection.settimeout(2)
                     self.send_response(200)
@@ -122,6 +129,8 @@ class WebView:
             raise
         print(f"[화면 공유] 휴대폰에서 열 주소: http://{_local_ip()}:{self.port}/{self.token}",
               flush=True)
+        print("[화면 공유] 암호화 없는 연결입니다. 믿을 수 있는 Wi-Fi에서만 쓰고, 주소를 "
+              "큰 화면이나 공개 채팅에 보이지 마세요.", flush=True)
 
     def update(self, frame):
         """보는 사람이 있을 때만 프레임을 복사하고 인코딩을 맡깁니다."""
