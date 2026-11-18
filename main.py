@@ -243,7 +243,7 @@ class VisionThread(threading.Thread):
                     "face_boxes": face_boxes, "captured_at": t_cap,
                     "mouth_openings": mouth_openings,
                     "hand_count": (len(getattr(hand_res, "multi_hand_landmarks", None) or [])
-                                   if hand_detector is not None else
+                                   if hand_detector is not None or glasses is not None else
                                    sum(bool(getattr(res, name, None)) for name in
                                        ("left_hand_landmarks", "right_hand_landmarks"))),
                     # 안경 시점은 Holistic 이 없어 res 가 None 입니다. 그때는 관절 가림 정보로 셉니다.
