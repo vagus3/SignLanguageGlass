@@ -448,6 +448,8 @@ def build_parser():
                     help="기존 영상 창에 Holistic 관절 연결선을 표시")
     ap.add_argument("--video-captions", action=argparse.BooleanOptionalAction, default=None,
                     help="영상 위 말풍선 표시 (카메라가 있으면 기본 활성화)")
+    ap.add_argument("--web-view", nargs="?", type=int, const=8765, default=None,
+                    metavar="PORT", help="같은 와이파이의 휴대폰에 영상 공유 (기본 포트 8765)")
     ap.add_argument("--transcript", action="store_true",
                     help="확정된 음성의 대화 기록 창도 표시 (H로 열기/닫기)")
     ap.add_argument("--no-gate", action="store_true",
@@ -759,7 +761,15 @@ def main():
 
     print("실행 중. " + ("q 로 종료." if has_window else "Ctrl+C 로 종료."))
 
+    web_view = None
     try:
+        if a.web_view is not None:
+            if overlay is None:
+                print("[화면 공유] 영상 말풍선이 꺼져 있어 공유할 화면이 없습니다")
+            else:
+                from src.web_view import WebView
+                web_view = WebView(a.web_view)
+                web_view.start()
         if overlay is not None:
             cv2.namedWindow(video_window, cv2.WINDOW_AUTOSIZE)
         while True:
@@ -941,6 +951,8 @@ def main():
                         cv2.putText(video, "MIC MUTED (TTS)", (16, 80),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
                     cv2.imshow(video_window, video)
+                    if web_view is not None:
+                        web_view.update(video)
                     last_video_draw = now
                 if transcript_open:
                     if transcript is None:
@@ -981,6 +993,8 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        if web_view is not None:
+            web_view.close()
         shutdown(cv2, a, stats, display, recorder, cloud, vision, face_thread, stt, tts)
 
 
