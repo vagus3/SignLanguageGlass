@@ -8,9 +8,7 @@ CloudClient 자리에 그대로 들어갑니다. 네트워크는 쓰지 않습�
    상대가 방금 한 말(heard)은 그 말에 대한 대답일 법한 문장에 가산점을 줍니다.
 3. 목록에 있는 단어열이면 그 문장을, 아니면 인식된 단어를 그대로 보여 줍니다.
 
-문맥으로 고른 문장은 추정입니다. 화면에는 "(추정)" 을 붙여 보여 줍니다.
-점수가 speak_min 이상이면 소리로도 말합니다(speech 는 "(추정)" 을 뺀 문장). 응급 상황에서는
-글자보다 소리가 상대에게 먼저 닿아야 하므로, 추정이어도 점수가 충분하면 말합니다.
+문맥으로 고른 문장도 화면에 그대로 보여 줍니다. 점수가 speak_min 이상이면 소리로 말합니다.
 """
 import json
 import re
@@ -22,7 +20,6 @@ from src import clock
 from src.ctc_runtime import GLOSS_VERSION, decode_with_phrases
 from src.pose_sequence import FEATURE_SETS
 
-GUESS = "(추정) "
 _VARIANT = re.compile(r"_\d+$")      # 같은 이름의 다른 수어를 구분하는 번호 (검사_0029)
 
 
@@ -65,7 +62,7 @@ class LocalSignClient:
     timeout = 10
 
     def __init__(self, recognizer, phrases=(), *, bonus=1.0, heard_seconds=20.0, save_dir=None,
-                 speak_min=0.5):
+                 speak_min=0.0):
         """save_dir: 인식한 구간의 좌표와 결과를 남길 폴더 (실제 카메라 문제를 살펴볼 때)."""
         self.save_dir = Path(save_dir) if save_dir else None
         self.speak_min = speak_min      # 이 점수 이상이면 소리로 말함 (1 보다 크면 말하지 않음)
@@ -126,9 +123,8 @@ class LocalSignClient:
             result["status"] = "uncertain"
         else:
             text = self.texts.get(tuple(glosses))
-            guessed = payload["source"] == "phrase"
             spoken = text or plain_words(glosses)
             result.update(status="ok", source="phrase" if text else "words",
-                          text=(GUESS if guessed else "") + spoken, speech=spoken,
+                          text=spoken, speech=spoken,
                           auto_speech=bool(payload["score"] >= self.speak_min))
         return result

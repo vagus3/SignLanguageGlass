@@ -5,8 +5,7 @@ CloudWorker 가 쓰는 클라이언트(payload, translate, timeout)와 같은 �
 
 1. 상황 문장 목록(+단어 하나, 수어 아님) 중에서 Qwen 이 가장 그럴듯한 답을 고릅니다 (src.train_qwen.rank).
    자유롭게 문장을 쓰지 않으므로 하지 않은 말을 지어내지 않습니다.
-2. 같은 모델의 단어 판정층이 본 단어열과 비교합니다. 둘이 다르면 점수를 절반으로 낮추고
-   화면에 "(추정)" 을 붙입니다.
+2. 같은 모델의 단어 판정층이 본 단어열과 비교합니다. 둘이 다르면 점수를 절반으로 낮춥니다.
 3. 점수가 speak_min 이상이면 소리로 말합니다.
 
 composer(문장 모델, 예: src.translation.LocalTranslator 의 Qwen2.5-3B)를 주면, 목록 문장이
@@ -21,7 +20,7 @@ import numpy as np
 
 from src import clock
 from src.ctc_runtime import GLOSS_VERSION
-from src.local_sign import GUESS, plain_words
+from src.local_sign import plain_words
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -47,7 +46,7 @@ def glasses_glossary(vocabulary, phrases, strict_additions=False):
 class QwenSignClient:
     timeout = 20
 
-    def __init__(self, path, *, device=None, phrases=None, vocabulary=None, speak_min=0.5,
+    def __init__(self, path, *, device=None, phrases=None, vocabulary=None, speak_min=0.0,
                  heard_seconds=20.0, save_dir=None, composer=None):
         import torch
         from src.train_qwen import candidate_texts, load
@@ -139,8 +138,7 @@ class QwenSignClient:
                           auto_speech=bool(payload["score"] >= self.speak_min))
             return result
         spoken = payload["text"] if payload["text"] in self.phrase_texts else plain_words(glosses)
-        guessed = payload["source"] == "guess"
         result.update(status="ok", source="phrase" if spoken in self.phrase_texts else "words",
-                      text=(GUESS if guessed else "") + spoken, speech=spoken,
+                      text=spoken, speech=spoken,
                       auto_speech=bool(payload["score"] >= self.speak_min))
         return result

@@ -199,8 +199,9 @@ class SttWorker(threading.Thread):
     daemon = True
 
     def __init__(self, out_queue=None, device=None, use_vad=True, gate=None, backend=None,
-                 caption_events=False, speakers=None):
+                 caption_events=False, speakers=None, only_on_screen=False):
         super().__init__(name="stt")
+        self.only_on_screen = only_on_screen
         self.out = out_queue or queue.Queue()
         self.device = device
         self.use_vad = use_vad
@@ -253,7 +254,8 @@ class SttWorker(threading.Thread):
             if self._spacing is not None:
                 self._spacing.prepare()
             decoder = self._decoder()
-            router = (SpeakerAudioRouter(decoder, self._publish, self.speakers, C.AUDIO_RATE)
+            router = (SpeakerAudioRouter(decoder, self._publish, self.speakers, C.AUDIO_RATE,
+                                      only_on_screen=self.only_on_screen)
                       if self.speakers is not None else None)
         except ImportError as e:
             self.out.put(("error", f"패키지 없음: {e}" + self._fallback_hint()))
