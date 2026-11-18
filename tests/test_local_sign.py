@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 import numpy as np
 from src.cloud_sign import validate_response
-from src.local_sign import GUESS, LocalSignClient, load_phrases, plain_words
+from src.local_sign import LocalSignClient, load_phrases, plain_words
 from src.pose_sequence import PoseSequence
 
 labels = ["<blank>", "머리", "목", "아프다", "검사_0029"]
@@ -57,16 +57,17 @@ def run(client, seq=None):
 # Seen as-is and in the list: the reviewed sentence, not marked as a guess.
 result = run(client)
 assert (result["status"], result["text"], result["source"]) == ("ok", "목이 아파요.", "phrase")
-# score = the weakest word's probability (0.4995 here): below the default 0.5, shown only.
-assert result["auto_speech"] is False and result["speech"] == "목이 아파요."
+# The default speaks even when the score is below 0.5; an explicit threshold still applies.
+assert result["auto_speech"] is True and result["speech"] == "목이 아파요."
+assert not run(LocalSignClient(Recognizer(unsure), phrases, bonus=0.2, speak_min=0.5))["auto_speech"]
 assert run(LocalSignClient(Recognizer(unsure), phrases, bonus=0.2, speak_min=0.4))["auto_speech"]
-# What the other person just said tips a near-tie; the result is marked as a guess.
+# What the other person just said tips a near-tie; the result is shown without a prefix.
 client.hear("어디 아프세요?", at=100.0)
 assert client.heard(now=110.0) and not client.heard(now=121.0), "context expires"
 client.hear("어디 아프세요?")
 result = run(client)
-assert result["text"] == GUESS + "머리가 아파요." and result["glosses"] == ["머리", "아프다"]
-assert result["speech"] == "머리가 아파요.", "the guess mark is shown, never spoken"
+assert result["text"] == "머리가 아파요." and result["glosses"] == ["머리", "아프다"]
+assert result["speech"] == "머리가 아파요." and result["auto_speech"]
 # Not in the list: the recognized words, without variant numbers.
 clear = [[.01, .01, .01, .01, .96], [.9, .03, .03, .04, .001], [.01, .01, .01, .96, .01],
          [.9, .03, .03, .04, .001], [.9, .03, .03, .04, .001]]
@@ -84,7 +85,7 @@ weak.calibration = {"threshold": 0.9}
 result = run(LocalSignClient(weak, phrases, bonus=0))
 assert result["status"] == "uncertain" and result["text"] == "" and not result["auto_speech"]
 
-print("[OK] Local sign client: phrase list, context from speech, guess marking, "
+print("[OK] Local sign client: phrase list, context from speech, plain display, "
       "words fallback, no-sign and threshold")
 
 # --save-segments: each recognized segment and its result are kept for diagnosis.

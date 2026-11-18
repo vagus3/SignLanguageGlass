@@ -246,8 +246,11 @@ class VisionThread(threading.Thread):
                                    if hand_detector is not None else
                                    sum(bool(getattr(res, name, None)) for name in
                                        ("left_hand_landmarks", "right_hand_landmarks"))),
-                    "sign_hand_count": sum(bool(getattr(res, name, None)) for name in
-                                           ("left_hand_landmarks", "right_hand_landmarks")),
+                    # 안경 시점은 Holistic 이 없어 res 가 None 입니다. 그때는 관절 가림 정보로 셉니다.
+                    "sign_hand_count": (int(mask[:21].any()) + int(mask[21:42].any())
+                                        if glasses is not None else
+                                        sum(bool(getattr(res, name, None)) for name in
+                                            ("left_hand_landmarks", "right_hand_landmarks"))),
                     "size": (w, h), "fps": self.fps,
                     "in_fps": getattr(predictor, "last_fps", 0.0),
                     "conf": getattr(predictor, "last_conf", 0.0),
@@ -418,8 +421,8 @@ def build_parser():
                          "'none' 이면 문맥 보정 없음)")
     ap.add_argument("--phrase-bonus", type=float, default=1.0, metavar="VALUE",
                     help="local: 문맥 보정 세기 (0=거의 안 함, 클수록 목록 문장으로 기웁니다)")
-    ap.add_argument("--speak-min", type=float, default=0.5, metavar="SCORE",
-                    help="local: 인식 점수가 이 값 이상이면 소리로 말함 (0=항상, 1.01=말하지 않음)")
+    ap.add_argument("--speak-min", type=float, default=0.0, metavar="SCORE",
+                    help="local/qwen: 인식 점수가 이 값 이상이면 소리로 말함 (기본 0, 1.01=말하지 않음)")
     ap.add_argument("--save-segments", metavar="DIR",
                     help="local: 인식한 구간의 좌표와 결과를 이 폴더에 저장 (문제 진단용)")
     ap.add_argument("--auto-segment", action="store_true",
@@ -432,6 +435,9 @@ def build_parser():
     ap.add_argument("--auto-speaker", action=argparse.BooleanOptionalAction,
                     default=C.AUTO_SPEAKER,
                     help="입 움직임과 음성 시각으로 교대 화자 자동 선택 (기본 활성화)")
+    ap.add_argument("--only-on-screen", action="store_true",
+                    help="입이 움직이는 얼굴이 화면에 있을 때만 음성을 받아씀 (화면 밖 소리 무시). "
+                         "입 움직임이 약하면 실제 말도 놓칠 수 있음")
     ap.add_argument("--sign-camera", type=int, default=None, metavar="INDEX",
                     help="수어/기본 카메라 번호 (기본: config.CAM_INDEX)")
     ap.add_argument("--face-camera", type=int, default=None, metavar="INDEX",
@@ -680,7 +686,8 @@ def main():
         from src.stt_worker import SttWorker
         sq = queue.Queue()
         stt = SttWorker(sq, gate=gate, backend=a.stt, caption_events=True,
-                        **({"speakers": speakers} if speakers is not None else {}))
+                        **({"speakers": speakers, "only_on_screen": a.only_on_screen}
+                           if speakers is not None else {}))
         stt.start()
 
     tts = None
@@ -814,7 +821,8 @@ def main():
                                  f"후보={payload['raw']} 신뢰도={payload['conf']:.2f} "
                                  f"(확정 기준={C.CONF_THRESHOLD:.2f})")
                         print(f"[수어 상태] 인식용 손={payload.get('sign_hand_count', 0)}/2 "
-                              f"{state}", flush=True)
+                              f"{state} 영상 {payload.get('fps', 0):.1f}fps "
+                              f"처리 {payload.get('ms_vision', 0):.0f}ms", flush=True)
                     show_debug_view(cv2, payload, gate, recorder, segmenter)
             except queue.Empty:
                 pass

@@ -296,7 +296,7 @@ def train(model, tokenizer, composer, *, steps, batch, device, val_items=(), log
     return history, best
 
 
-def build(glosses, base=BASE, device="cpu", lora_rank=16, local_only=False):
+def build(glosses, base=BASE, device="cpu", lora_rank=16, local_only=False, feature_set="2d"):
     from peft import LoraConfig, get_peft_model
     from transformers import AutoModelForCausalLM, AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(base, local_files_only=local_only)
@@ -306,7 +306,7 @@ def build(glosses, base=BASE, device="cpu", lora_rank=16, local_only=False):
                                          lora_dropout=0.05, task_type="CAUSAL_LM",
                                          target_modules=["q_proj", "k_proj", "v_proj",
                                                          "o_proj"]))
-    return PoseQwen(llm, glosses).to(device), tokenizer
+    return PoseQwen(llm, glosses, feature_set=feature_set).to(device), tokenizer
 
 
 def build_from(path, device="cpu", local_only=True, glosses=None):
@@ -377,6 +377,8 @@ def main():
     p.add_argument("--val-count", type=int, default=160)
     p.add_argument("--device", default="mps" if torch.backends.mps.is_available() else "cpu")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--feature-set", default="2d",
+                   help="입력 특징 (2d: 기본, ego_relative_v1: 손 위치·속도를 구간 안 상대값으로). 새 모델용")
     p.add_argument("--pretrain-steps", type=int, default=8000,
                    help="1단계: 관절 앞단만 단어 판정으로 학습하는 횟수 (0 이면 건너뜀)")
     p.add_argument("--pretrain-batch", type=int, default=32)
@@ -422,7 +424,7 @@ def main():
         else:       # 단어가 늘었으면 새 판정층을 1단계로 먼저 맞춥니다 (앞단은 이어 씀)
             print(f"단어 목록 변경 {len(old)} -> {len(glosses)}개: 1단계 {args.pretrain_steps}회 후 이어 학습")
     else:
-        model, tokenizer = build(glosses, args.base, args.device)
+        model, tokenizer = build(glosses, args.base, args.device, feature_set=args.feature_set)
     model.phrase_texts = {ph["text"] for ph in phrases}
     print(f"학습 {len(train_rows)}클립 / 수어자 {len(composer.signers)}명, "
           f"확인 수어자 {sorted(held)}, 단어 {len(glosses)}개, 장치 {args.device}")

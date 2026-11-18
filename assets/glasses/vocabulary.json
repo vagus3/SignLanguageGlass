@@ -171,13 +171,19 @@
    "gloss": "모르다",
    "category": "대답",
    "aihub_word": "WORD1096",
-   "reference_clip": "NIA_SL_WORD1096_REAL01_F"
+   "reference_clip": "NIA_SL_WORD1096_REAL01_F",
+   "aihub_word_extra": [
+    "WORD2485"
+   ]
   },
   {
    "gloss": "없다",
    "category": "대답",
    "aihub_word": "WORD1637",
-   "reference_clip": "NIA_SL_WORD1637_REAL01_F"
+   "reference_clip": "NIA_SL_WORD1637_REAL01_F",
+   "aihub_word_extra": [
+    "WORD1384"
+   ]
   },
   {
    "gloss": "있다",
