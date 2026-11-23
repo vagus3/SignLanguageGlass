@@ -87,6 +87,8 @@ class CloudController:
             if result.get("error"):
                 # 409: the server's --device-model is another model; 401: token; 429: busy.
                 self.out("[cloud] 요청 실패:", result["error"])
+            if status == "expired" and result.get("reason"):
+                self.out("[cloud] 요청 만료:", result["reason"])
             message = STATUS_TEXT.get(status, "")
             if self.backend == "device" and status == "unavailable":
                 message = "수어 인식 오류: 터미널을 확인하세요"

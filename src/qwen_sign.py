@@ -75,7 +75,9 @@ class QwenSignClient:
         self.phrase_texts = {p["text"] for p in phrases}
         self.composer = composer
         if composer is not None:
-            self.timeout = 90   # 문장 모델이 새 문장을 쓰는 시간까지 (메모리가 부족하면 더 느림)
+            # 인식과 대기열 시간을 감안해 생성 마감 뒤에도 미리보기를 보낼 여유를 둡니다.
+            self.timeout = 30
+            composer.max_seconds = min(getattr(composer, "max_seconds", None) or 15.0, 15.0)
         self.glossary = glasses_glossary(vocabulary, phrases) if composer is not None else None
         self.speak_min, self.heard_seconds = speak_min, heard_seconds
         self.save_dir = Path(save_dir) if save_dir else None

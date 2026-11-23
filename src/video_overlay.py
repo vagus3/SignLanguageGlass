@@ -17,10 +17,31 @@ HEADER_BG = (20, 26, 36)          # RGB, as PIL draws it
 SELECTED = (106, 206, 255)
 CANDIDATE = (155, 165, 180)
 CACHE_SIZE = 64
+# 말풍선 유리 효과: 뒤 영상을 흐리게 비추고 어두운 색을 조금 섞어 글자를 읽기 쉽게 합니다.
+# GLASS_TINT 를 1.0 으로 올리면 예전처럼 완전히 가리는 말풍선이 됩니다.
+GLASS_COLOR = (16, 22, 32)        # RGB
+GLASS_TINT = 0.45                 # 0 = 투명한 유리, 1 = 불투명
+GLASS_BLUR = 3.0                  # 1/4 축소 영상에서의 흐림 정도
+GLASS_PAD = 12                    # 가장자리가 자연스럽게 흐려지도록 더 읽는 여백(px)
 
 
 def _bgr(rgb):
     return rgb[2], rgb[1], rgb[0]
+
+
+def _frost(output, x0, y0, x1, y1):
+    """output[y0:y1, x0:x1] 를 흐린 유리 색으로 (사본) 돌려줍니다. 여백까지 읽어 가장자리를 자연스럽게."""
+    h, w = output.shape[:2]
+    px0, py0 = max(0, x0 - GLASS_PAD), max(0, y0 - GLASS_PAD)
+    px1, py1 = min(w, x1 + GLASS_PAD), min(h, y1 + GLASS_PAD)
+    padded = output[py0:py1, px0:px1]
+    ph, pw = padded.shape[:2]
+    # 1/4 로 줄여 흐린 뒤 다시 키움: 큰 영역도 1ms 안팎
+    small = cv2.resize(padded, (max(1, pw // 4), max(1, ph // 4)), interpolation=cv2.INTER_AREA)
+    small = cv2.GaussianBlur(small, (0, 0), GLASS_BLUR)
+    blurred = cv2.resize(small, (pw, ph), interpolation=cv2.INTER_LINEAR)
+    inner = blurred[y0 - py0:y1 - py0, x0 - px0:x1 - px0].astype(np.float32)
+    return inner * (1.0 - GLASS_TINT) + np.array(_bgr(GLASS_COLOR), np.float32) * GLASS_TINT
 
 
 def _blend(region, rgb, alpha):
@@ -117,17 +138,39 @@ class VideoOverlay:
             x, y = bx - ox, by - oy
             if rel_tail:
                 draw.polygon(list(rel_tail), fill=color)
-            draw.rounded_rectangle((x, y, x + bw, y + bh), radius=12, fill=HEADER_BG,
-                                   outline=color, width=2)
-            draw.text((x + 12, y + 8), "인식 중 ···" if partial else "인식 완료", font=font,
-                      fill=color)
-            for index, line in enumerate(lines):
-                draw.text((x + 12, y + 8 + line_h * (index + 1)), line, font=font,
-                          fill=(255, 255, 255))
+            # 속은 비워 둡니다: 뒤 영상의 흐린 유리 면은 _draw_caption 이 그립니다.
+            draw.rounded_rectangle((x, y, x + bw, y + bh), radius=12, outline=color, width=2)
+            status = "인식 중 ···" if partial else "인식 완료"
+            texts = [((x + 12, y + 8), status, color)] + [
+                ((x + 12, y + 8 + line_h * (index + 1)), line, (255, 255, 255))
+                for index, line in enumerate(lines)]
+            for (tx, ty), line, fill in texts:     # 밝은 배경 위에서도 읽히게 그림자 먼저
+                draw.text((tx + 1, ty + 1), line, font=font, fill=(0, 0, 0))
+            for (tx, ty), line, fill in texts:
+                draw.text((tx, ty), line, font=font, fill=fill)
             rgba = np.asarray(image)
             return rgba[:, :, 2::-1].astype(np.float32), rgba[:, :, 3].copy()
         bgr, alpha = self._cached(key, build)
         return bgr, alpha, ox, oy
+
+    def _glass_mask(self, fx, fy, bw, bh):
+        """둥근 사각형 유리 면의 모양 (상자 왼쪽 위 정수 좌표 기준)과 그 원점의 소수 부분 보정."""
+        def build():
+            image = Image.new("L", (int(math.ceil(fx + bw)) + 1, int(math.ceil(fy + bh)) + 1), 0)
+            ImageDraw.Draw(image).rounded_rectangle((fx, fy, fx + bw, fy + bh), radius=12,
+                                                    fill=255)
+            return np.asarray(image)
+        return self._cached(("glass", fx, fy, bw, bh), build)
+
+    def _draw_glass(self, output, bx, by, bw, bh):
+        h, w = output.shape[:2]
+        ox, oy = int(math.floor(bx)), int(math.floor(by))
+        mask = self._glass_mask(bx - ox, by - oy, bw, bh)
+        x0, y0 = max(0, ox), max(0, oy)
+        x1, y1 = min(w, ox + mask.shape[1]), min(h, oy + mask.shape[0])
+        if x0 < x1 and y0 < y1:
+            _blend(output[y0:y1, x0:x1], _frost(output, x0, y0, x1, y1),
+                   mask[y0 - oy:y1 - oy, x0 - ox:x1 - ox])
 
     # ---------------------------------------------------------------- render
     def render(self, frame, caption, track, now, mirror=False, tracks=(), manual=False,
@@ -224,6 +267,7 @@ class VideoOverlay:
                 ty = max(by + 10, min((box[1] + box[3]) / 2, by + bh - 10))
                 tail = [(edge, ty - 7), (tip, ty), (edge, ty + 7)]
         occupied.append((bx, by, bx + bw, by + bh))
+        self._draw_glass(output, bx, by, bw, bh)
         bgr, alpha, ox, oy = self._bubble(lines, size, caption.partial, bx, by, bw, bh, tail)
         x0, y0 = max(0, ox), max(0, oy)
         x1, y1 = min(w, ox + alpha.shape[1]), min(h, oy + alpha.shape[0])
