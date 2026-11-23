@@ -13,6 +13,7 @@ compose() follows REVIEW_AND_PLAN 3.5:
 Language models only need translate(glosses, meanings) -> str and a model name.
 """
 import hashlib
+import time
 import json
 import os
 import re
@@ -302,6 +303,7 @@ class LocalTranslator:
             self.llm = PeftModel.from_pretrained(self.llm, adapter).merge_and_unload().eval()
             self.model = f"{self.model}+{adapter.parent.name}"
         self.examples, self.max_new_tokens = list(examples), max_new_tokens
+        self.max_seconds = None     # 한 문장에 쓸 수 있는 시간(초). 넘기면 TimeoutError
 
     def _shots(self, words, limit=6):
         scored = sorted(self.examples, key=lambda e: -len(set(e["glosses"]) & set(words)))
@@ -330,8 +332,11 @@ class LocalTranslator:
         eos = {self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|im_end|>")}
         out, past, position = [], None, torch.arange(ids.shape[1], device=self.device)[None]
         step = ids
+        started = time.monotonic()
         with torch.inference_mode():
             for _ in range(self.max_new_tokens):
+                if self.max_seconds and time.monotonic() - started > self.max_seconds:
+                    raise TimeoutError(f"문장 만들기가 {self.max_seconds:.0f}초를 넘겼습니다")
                 result = self.llm(input_ids=step, past_key_values=past, position_ids=position,
                                   use_cache=True)
                 past = result.past_key_values

@@ -303,6 +303,12 @@ class CloudWorker(threading.Thread):
                 sequence, segment_id, origin_t, deadline = self.jobs.get(timeout=0.1)
             except queue.Empty:
                 continue
+            with self.lock:
+                stale = (self._quit.is_set() or segment_id != self.pending
+                         or segment_id in self.seen or clock.now() > deadline)
+            if stale:
+                self.results.put((segment_id, {}, origin_t, deadline))
+                continue
             start = clock.now()
             try:
                 payload = self._payload(sequence, segment_id)
@@ -324,11 +330,20 @@ class CloudWorker(threading.Thread):
         except queue.Empty:
             return None
         with self.lock:
-            stale = (self._quit.is_set() or segment_id != self.pending
-                     or segment_id in self.seen or clock.now() > deadline)
+            now = clock.now()
+            if self._quit.is_set():
+                reason = "종료 중"
+            elif segment_id in self.seen:
+                reason = "취소됨 (c 키 또는 마감 뒤 해제)"
+            elif segment_id != self.pending:
+                reason = "이미 다른 요청으로 넘어감"
+            elif now > deadline:
+                reason = f"마감 초과 (마감보다 {now - deadline:.1f}초 늦게 도착)"
+            else:
+                reason = None
             if segment_id == self.pending:
                 self.pending = None
             self.seen.append(segment_id)
-        if stale:
-            return {"status": "expired", "text": "", "auto_speech": False}, origin_t
+        if reason:
+            return {"status": "expired", "text": "", "auto_speech": False, "reason": reason}, origin_t
         return result, origin_t
