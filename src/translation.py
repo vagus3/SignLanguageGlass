@@ -288,7 +288,8 @@ class LocalTranslator:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
         self.model = model or os.environ.get("LOCAL_LLM_MODEL", LOCAL_MODEL)
-        self.device = device or ("mps" if torch.backends.mps.is_available() else "cpu")
+        self.device = device or ("cuda" if torch.cuda.is_available() else
+                                 "mps" if torch.backends.mps.is_available() else "cpu")
         dtype = torch.float16 if self.device != "cpu" else torch.float32
         adapter = None
         if Path(self.model, "composer.json").exists():     # src.train_composer 결과 폴더
@@ -311,22 +312,30 @@ class LocalTranslator:
 
     def prompt(self, glosses, mapping, context=None):
         words = [mapping[g] for g in glosses]
-        lines = ["착용자가 한국수어로 말한 단어열을, 상대에게 들려줄 자연스러운 한국어 문장으로 "
-                 "바꾸세요. 응급·병원 상황입니다. 입력 단어의 뜻만 쓰세요. 입력에 없는 사건, 증상, "
-                 "요청, 사람, 숫자, 장소, 부정/긍정을 덧붙이지 마세요. 조사와 어미만 자연스럽게 "
-                 "붙이세요. '상대가 방금 한 말'은 무엇에 대한 대답인지 알기 위한 참고이며, 그 말을 "
-                 "따라 하거나 이어 쓰지 마세요. 문장만 답하세요."]
-        for example in self._shots(glosses):
+        lines = ["단어: 피곤하다 걱정\n통역: 피곤하고 걱정돼요.",
+                 "단어: 목 아프다\n통역: 목이 아파요.",
+                 "단어: 상담 원하다\n통역: 상담을 원해요."]
+        for example in self._shots(glosses, limit=2):
+            if not set(example["glosses"]) & set(glosses):
+                continue
             lines.append(f"단어: {' '.join(mapping.get(g, g) for g in example['glosses'])}\n"
-                         f"문장: {example['text']}")
+                         f"통역: {example['text']}")
         if context:
-            lines.append(f"상대가 방금 한 말: {context}")
-        lines.append(f"단어: {' '.join(words)}\n문장:")
+            lines.append(f"대화 참고: {context}")
+        lines.append(f"단어: {' '.join(words)}\n통역:")
         return "\n\n".join(lines)
 
     def translate(self, glosses, mapping, context=None):
         import torch
-        messages = [{"role": "user", "content": self.prompt(glosses, mapping, context)}]
+        messages = [
+            {"role": "system", "content":
+             "당신은 한국수어 사용자의 말을 한국어로 옮기는 통역기입니다. "
+             "입력 단어열을 말한 사람의 입장에서 통역문만 출력하세요. "
+             "상대방의 질문에 직접 답하거나 수어 사용자에게 조언하지 마세요. "
+             "입력 단어의 순서와 의미를 보존하고 조사와 어미를 붙이세요. "
+             "입력에 없는 행동, 원인, 미래 사건을 만들지 마세요. "
+             "관계가 불명확한 단어들은 짧은 문장으로 나누어 표현하세요."},
+            {"role": "user", "content": self.prompt(glosses, mapping, context)}]
         ids = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True,
                                                  return_tensors="pt").to(self.device)
         eos = {self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|im_end|>")}

@@ -6,7 +6,8 @@ CloudClient 자리에 그대로 들어갑니다. 네트워크는 쓰지 않습�
 1. OnnxRecognizer 로 구간을 인식합니다 (src/ctc_runtime.py).
 2. 상황 문장 목록(assets/phrases/*.json)이 있으면 decode_with_phrases 로 보정합니다.
    상대가 방금 한 말(heard)은 그 말에 대한 대답일 법한 문장에 가산점을 줍니다.
-3. 목록에 있는 단어열이면 그 문장을, 아니면 인식된 단어를 그대로 보여 줍니다.
+3. 목록 밖 단어열은 composer가 있으면 상대 발화와 함께 문장으로 만듭니다.
+   composer가 없으면 인식된 단어를 그대로 보여 줍니다.
 
 문맥으로 고른 문장도 화면에 그대로 보여 줍니다. 점수가 speak_min 이상이면 소리로 말합니다.
 """
@@ -62,7 +63,7 @@ class LocalSignClient:
     timeout = 10
 
     def __init__(self, recognizer, phrases=(), *, bonus=1.0, heard_seconds=20.0, save_dir=None,
-                 speak_min=0.0):
+                 speak_min=0.0, composer=None):
         """save_dir: 인식한 구간의 좌표와 결과를 남길 폴더 (실제 카메라 문제를 살펴볼 때)."""
         self.save_dir = Path(save_dir) if save_dir else None
         self.speak_min = speak_min      # 이 점수 이상이면 소리로 말함 (1 보다 크면 말하지 않음)
@@ -70,6 +71,17 @@ class LocalSignClient:
         self.bonus, self.heard_seconds = bonus, heard_seconds
         self.texts = {tuple(p["glosses"]): p["text"] for p in self.phrases}
         self._heard = ("", float("-inf"))
+        self.composer = composer
+        if composer is not None:
+            from src.translation import Glossary, learn_stems
+            meanings = {g: plain_words([g]) for g in recognizer.labels[1:]}
+            kinds = {g: "negation" for g, word in meanings.items()
+                     if word in ("없다", "아니다", "못하다")}
+            kinds.update({g: "place" for g, word in meanings.items() if word == "병원"})
+            self.glossary = Glossary(meanings, kinds=kinds,
+                                    stems=learn_stems(meanings, self.phrases))
+            self.timeout = 30
+            composer.max_seconds = min(getattr(composer, "max_seconds", None) or 15.0, 15.0)
 
     def hear(self, text, at=None):
         """상대가 방금 한 말(음성 인식 확정 결과). 잠시 동안만 문맥으로 씁니다."""
@@ -108,7 +120,8 @@ class LocalSignClient:
             except (OSError, ValueError) as error:
                 print(f"[수어] 구간 저장 실패: {error}")
         return {"version": GLOSS_VERSION, "session_id": session_id, "segment_id": segment_id,
-                "glosses": list(glosses), "score": float(score), "source": source}
+                "glosses": list(glosses), "score": float(score), "source": source,
+                "context": self.heard()}
 
     def translate(self, payload):
         glosses = payload["glosses"]
@@ -123,6 +136,20 @@ class LocalSignClient:
             result["status"] = "uncertain"
         else:
             text = self.texts.get(tuple(glosses))
+            if text is None and self.composer is not None:
+                from src.translation import compose
+                start = clock.now()
+                made = compose(glosses, self.glossary, self.composer,
+                               context=payload.get("context") or None)
+                result.update(status=made.status, text=made.text, source=made.source,
+                              issues=list(made.issues))
+                result["timings_ms"]["language"] = (clock.now() - start) * 1000
+                if made.status == "ok":
+                    result.update(speech=made.text,
+                                  auto_speech=bool(payload["score"] >= self.speak_min))
+                print(f"[문장 생성: {made.source}] {' '.join(glosses)} → {made.text}"
+                      + (f" ({', '.join(made.issues)})" if made.issues else ""), flush=True)
+                return result
             spoken = text or plain_words(glosses)
             result.update(status="ok", source="phrase" if text else "words",
                           text=spoken, speech=spoken,

@@ -687,6 +687,21 @@ python tools/prepare_aihub3d.py data/raw/New_sample --out data/processed/aihub3d
 - **실물 OLED 규격은 미확정입니다.** 현재 보존된 렌더러·패킹은 128×64 SSD1306/SSD1309
   기준입니다. 다른 해상도·컨트롤러 패널은 드라이버·프레임버퍼 호환 확인이 필요합니다.
 
+## 웹캠 CTC 인식 + 문맥을 참고한 문장 생성
+
+`--recognize local`에서도 `--compose-llm`으로 기존 문장 생성기를 사용할 수 있습니다.
+등록된 문장은 그대로 사용하고, 목록에 없는 단어열은 최근 20초 내 상대 발화와 함께
+언어 모델에 전달합니다. 생성 실패나 출력 검사 실패 시 단어를 미리보기로 표시하며
+자동 발화하지 않습니다. 실행 로그의 `[문장 생성: language_model]`로 실제 호출을 확인합니다.
+
+```powershell
+.venv/Scripts/python.exe main.py --sign-backend cloud --recognize local --onnx models/words_v1/ctc.onnx --compose-llm models/Qwen2.5-1.5B-Instruct --auto-segment --viewpoint webcam --video-captions --transcript
+```
+
+문장 모델은 미리 내려받아야 하며 PyTorch와 transformers가 필요합니다.
+CUDA GPU가 있으면 자동으로 사용합니다. 기존 `--recognize local`은 문장 모델을 지정하지
+않으면 등록 문장 보정만 수행합니다.
+
 ## 안경 시점 Qwen 인식 (실험, feat/glasses-qwen)
 
 안경 카메라가 착용자의 손만 보는 상황을 위한 경로입니다. 손 관절을 Qwen2.5-0.5B 로 미세조정한
