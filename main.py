@@ -411,7 +411,7 @@ def build_parser():
     ap.add_argument("--qwen-model", metavar="DIR",
                     help="--recognize qwen: src.train_qwen 결과 폴더 (안경 시점 Qwen 미세조정 모델)")
     ap.add_argument("--compose-llm", metavar="MODEL",
-                    help="--recognize qwen: 목록에 없는 말을 이 문장 모델로 만듦 "
+                    help="--recognize local/qwen: 목록에 없는 말을 이 문장 모델로 만듦 "
                          "(예: Qwen/Qwen2.5-3B-Instruct, 이 기기에서 실행)")
     ap.add_argument("--onnx", metavar="PATH",
                     help="--sign-backend device 또는 --recognize device/local 의 CTC ONNX "
@@ -522,6 +522,9 @@ def main():
             ap.error(f"--{name} 에는 유한한 숫자가 필요합니다")
     if a.recognize == "qwen" and not a.qwen_model:
         ap.error("--recognize qwen 에는 --qwen-model 이 필요합니다")
+    if a.compose_llm and (a.no_sign or a.sign_backend != "cloud"
+                          or a.recognize not in ("local", "qwen")):
+        ap.error("--compose-llm 은 --sign-backend cloud --recognize local/qwen 에서 사용합니다")
     if a.sign_backend == "device" and a.recognize in ("local", "qwen"):
         ap.error("--sign-backend device 는 --recognize local/qwen 과 함께 쓸 수 없습니다 "
                  "(device 는 단어를 바로 발화, local/qwen 은 기기에서 문장까지 만듭니다)")
@@ -605,9 +608,15 @@ def main():
                 phrase_path = Path(a.phrases or C.ASSET_DIR / "phrases")
                 if (a.phrases or "").lower() != "none" and (a.phrases or phrase_path.exists()):
                     phrases, dropped = load_phrases(phrase_path, device.labels)
+                composer = None
+                if a.compose_llm:
+                    from src.translation import LocalTranslator
+                    print(f"[수어] 문장 모델 로드 중: {a.compose_llm}", flush=True)
+                    composer = LocalTranslator(a.compose_llm, examples=phrases)
+                    print(f"[수어] 문장 모델: {a.compose_llm} ({composer.device}, 상대 발화 문맥 사용)")
                 client = local_sign = LocalSignClient(device, phrases, bonus=a.phrase_bonus,
                                                       save_dir=a.save_segments,
-                                                      speak_min=a.speak_min)
+                                                      speak_min=a.speak_min, composer=composer)
                 print(f"[수어] 기기 단독 인식: {len(device.labels) - 1}개 단어, 상황 문장 "
                       f"{len(phrases)}개" + (f" (모델에 없는 단어라 제외 {dropped}개)"
                                             if dropped else "") + ", 서버를 쓰지 않습니다")
@@ -979,7 +988,7 @@ def main():
             has_window = window_open()
             if has_window:
                 key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
+                if key in (ord("q"), ord("Q"), 27):  # q / Q / Esc
                     break
                 if key == ord("h"):
                     transcript_open = not transcript_open

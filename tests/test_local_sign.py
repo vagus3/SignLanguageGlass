@@ -97,3 +97,42 @@ with tempfile.TemporaryDirectory() as td:
     saved = sorted(p.name for p in _P(td).iterdir())
     assert saved == ["s_0003.json", "s_0003.npz"], saved
 print("[OK] segments saved for diagnosis")
+
+
+# CTC results outside the phrase list reach the existing contextual composer.
+class Composer:
+    accepts_context = True
+
+    def __init__(self, answer="검사가 아파요."):
+        self.answer, self.calls = answer, []
+
+    def translate(self, glosses, meanings, context=None):
+        self.calls.append((glosses, meanings, context))
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+composer = Composer()
+composed = LocalSignClient(Recognizer(clear), phrases, composer=composer)
+composed.hear("검사는 어떠세요?")
+payload = composed.payload(sequence(), "s", "c")
+composed.hear("나중에 한 말")
+result = validate_response(composed.translate(payload), payload)
+assert result["status"] == "ok" and result["source"] == "language_model"
+assert result["speech"] == "검사가 아파요." and result["auto_speech"]
+assert composer.calls[0][0] == ["검사_0029", "아프다"]
+assert composer.calls[0][1]["검사_0029"] == "검사"
+assert composer.calls[0][2] == "검사는 어떠세요?", "context belongs to the segment"
+assert result["timings_ms"]["language"] >= 0
+
+for answer in (TimeoutError(), "검사 123 아파요."):
+    failed = run(LocalSignClient(Recognizer(clear), phrases, composer=Composer(answer)))
+    assert failed["status"] == "fallback" and failed["source"] == "words"
+    assert failed["text"] == "검사 아프다" and not failed["auto_speech"]
+
+unused = Composer(RuntimeError("reviewed phrases should bypass generation"))
+assert run(LocalSignClient(Recognizer(unsure), phrases, composer=unused))["source"] == "phrase"
+assert unused.calls == []
+assert not run(LocalSignClient(Recognizer(clear), composer=Composer(), speak_min=1.01))["auto_speech"]
+print("[OK] CTC composer: context snapshot, meanings, speech threshold, checked fallback")
