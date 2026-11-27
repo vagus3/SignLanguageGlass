@@ -22,7 +22,7 @@ camera_state={"released":False,"closed":False,"phase":0,"started":None,"calls":0
 # Steps wait for processed frames and printed results, not fixed delays: a slow CI machine
 # only takes longer. LIMIT still ends a broken flow.
 LIMIT=30.0
-RESULT=("[cloud 번역]","[cloud 미리보기]","[cloud] 요청 실패")
+RESULT=("[cloud 번역]","[cloud 미리보기]","[cloud] 요청 실패","[수어 출력:")
 def answered():
     return any(marker in output.getvalue() for marker in RESULT)
 class Camera:
@@ -226,18 +226,22 @@ else:
         camera_state.update(phase=0, calls=0)
         output = io.StringIO()
         with patch.object(sys, "argv", ["main.py", "--sign-backend", "cloud", "--display", "null",
-                                        "--no-stt", "--no-tts", "--fixed-caption",
+                                        "--no-stt", "--fixed-caption", "--no-auto-segment",
                                         "--recognize", "local", "--onnx", str(td / "ctc.onnx"),
                                         "--phrases", str(td / "phrases.json")]), \
                 patch("src.camera.CameraReader", Camera), \
                 patch("src.landmarks.make_holistic", lambda _: Holistic()), \
+                patch("src.tts_player.TtsPlayer") as tts_player, \
                 patch("cv2.imshow"), patch("cv2.destroyAllWindows"), patch("cv2.waitKey", wait_key), \
                 patch("urllib.request.urlopen", side_effect=no_network), \
                 patch.dict(os.environ, {"SIGN_SERVER_URL": "", "SIGN_SERVER_TOKEN": ""}), \
                 contextlib.redirect_stdout(output):
             main.main()
         assert "상황 문장 1개 (모델에 없는 단어라 제외 1개)" in output.getvalue(), output.getvalue()
-        assert "[cloud 번역] 머리가 아파요." in output.getvalue(), output.getvalue()
+        assert "[수어 인식] G0" in output.getvalue(), output.getvalue()
+        assert "[수어 출력: phrase] 머리가 아파요." in output.getvalue(), output.getvalue()
+        tts_player.return_value.say.assert_called_once()
+        assert tts_player.return_value.say.call_args.args == ("머리가 아파요.",)
         # Wrong combinations stop before any camera opens.
         for argv in (["--recognize", "local"],
                      ["--recognize", "local", "--onnx", str(td / "ctc.onnx"),

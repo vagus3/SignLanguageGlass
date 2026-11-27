@@ -689,18 +689,21 @@ python tools/prepare_aihub3d.py data/raw/New_sample --out data/processed/aihub3d
 
 ## 웹캠 CTC 인식 + 문맥을 참고한 문장 생성
 
-`--recognize local`에서도 `--compose-llm`으로 기존 문장 생성기를 사용할 수 있습니다.
-등록된 문장은 그대로 사용하고, 목록에 없는 단어열은 최근 20초 내 상대 발화와 함께
-언어 모델에 전달합니다. 생성 실패나 출력 검사 실패 시 단어를 미리보기로 표시하며
-자동 발화하지 않습니다. 실행 로그의 `[문장 생성: language_model]`로 실제 호출을 확인합니다.
+`--recognize local`은 먼저 카메라 영상에서 CTC가 읽은 단어를 확정합니다. 터미널의
+`[수어 인식]`에서 원래 단어와 점수를, `[수어 출력: ...]`에서 자막과 음성으로 전달된
+문장을 확인할 수 있습니다. 정확히 일치하는 등록 문장을 우선 사용합니다.
+`--compose-llm`을 지정하면 나머지 단어열은 최근 20초 내 상대 발화를 참고해 문장으로 만듭니다.
+문장 생성이 실패하거나 시간 제한을 넘기거나 단어 검사에서 걸리면 인식 단어를 그대로 읽습니다.
+인식 점수가 낮아도 검출된 단어를 읽으며, 검출된 단어가 없으면 발화하지 않습니다.
+로컬 CTC는 기본적으로 손 움직임으로 수어 구간을 자동으로 자릅니다. 시작과 종료를 직접
+지정하려면 `--no-auto-segment`를 추가하고 SPACE를 사용합니다.
 
-```powershell
-.venv/Scripts/python.exe main.py --sign-backend cloud --recognize local --onnx models/words_v1/ctc.onnx --compose-llm models/Qwen2.5-1.5B-Instruct --auto-segment --viewpoint webcam --video-captions --transcript
+```bash
+.venv/bin/python main.py --sign-backend cloud --recognize local --onnx models/words_v1/ctc.onnx --compose-llm Qwen/Qwen2.5-0.5B-Instruct --viewpoint webcam --video-captions --transcript
 ```
 
 문장 모델은 미리 내려받아야 하며 PyTorch와 transformers가 필요합니다.
-CUDA GPU가 있으면 자동으로 사용합니다. 기존 `--recognize local`은 문장 모델을 지정하지
-않으면 등록 문장 보정만 수행합니다.
+CUDA GPU가 있으면 자동으로 사용합니다. 문장 모델을 지정하지 않으면 등록 문장 또는 인식 단어를 읽습니다.
 
 ## 안경 시점 Qwen 인식 (실험, feat/glasses-qwen)
 

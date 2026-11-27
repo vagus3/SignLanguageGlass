@@ -417,16 +417,14 @@ def build_parser():
                     help="--sign-backend device 또는 --recognize device/local 의 CTC ONNX "
                          "(tools/export_ctc_onnx.py 결과)")
     ap.add_argument("--phrases", metavar="PATH", default=None,
-                    help="local: 상황 문장 목록 파일·폴더, 쉼표로 여러 개 (기본: assets/phrases 전부, "
-                         "'none' 이면 문맥 보정 없음)")
-    ap.add_argument("--phrase-bonus", type=float, default=1.0, metavar="VALUE",
-                    help="local: 문맥 보정 세기 (0=거의 안 함, 클수록 목록 문장으로 기웁니다)")
+                    help="local: 인식 단어열과 일치할 때 쓸 문장 목록 (기본: assets/phrases, "
+                         "'none' 이면 목록 사용 안 함)")
     ap.add_argument("--speak-min", type=float, default=0.0, metavar="SCORE",
-                    help="local/qwen: 인식 점수가 이 값 이상이면 소리로 말함 (기본 0, 1.01=말하지 않음)")
+                    help="qwen: 인식 점수가 이 값 이상이면 소리로 말함 (기본 0, 1.01=말하지 않음)")
     ap.add_argument("--save-segments", metavar="DIR",
                     help="local: 인식한 구간의 좌표와 결과를 이 폴더에 저장 (문제 진단용)")
-    ap.add_argument("--auto-segment", action="store_true",
-                    help="cloud/device: 손 움직임으로 수어 구간 자동 시작/종료 (SPACE도 사용 가능)")
+    ap.add_argument("--auto-segment", action=argparse.BooleanOptionalAction,
+                    help="손 움직임으로 수어 구간 자동 시작/종료 (local 기본값, SPACE도 사용 가능)")
     ap.add_argument("--viewpoint", choices=["webcam", "glasses"], default=C.SIGN_VIEWPOINT,
                     help="수어 카메라 시점: webcam=노트북 정면(손을 내리면 문장 끝), "
                          "glasses=안경 1인칭")
@@ -532,8 +530,6 @@ def main():
         ap.error("--sign-backend device / --recognize device·local 에는 --onnx 가 필요합니다")
     if a.sign_mapping and (a.sign_backend != "device" or a.no_sign):
         ap.error("--sign-mapping 은 --sign-backend device 에서만 사용합니다")
-    if not math.isfinite(a.phrase_bonus) or a.phrase_bonus < 0:
-        ap.error("--phrase-bonus 에는 0 이상의 숫자가 필요합니다")
     # 스레드 시작 전에 공용 설정에 반영해 두 카메라 및 재연결에도 적용합니다.
     if a.exposure is not None or a.gain is not None:
         C.CAM_MANUAL_EXPOSURE = True
@@ -612,11 +608,15 @@ def main():
                 if a.compose_llm:
                     from src.translation import LocalTranslator
                     print(f"[수어] 문장 모델 로드 중: {a.compose_llm}", flush=True)
-                    composer = LocalTranslator(a.compose_llm, examples=phrases)
-                    print(f"[수어] 문장 모델: {a.compose_llm} ({composer.device}, 상대 발화 문맥 사용)")
-                client = local_sign = LocalSignClient(device, phrases, bonus=a.phrase_bonus,
-                                                      save_dir=a.save_segments,
-                                                      speak_min=a.speak_min, composer=composer)
+                    try:
+                        composer = LocalTranslator(a.compose_llm, examples=phrases)
+                    except (ImportError, OSError, RuntimeError, ValueError) as error:
+                        print(f"[수어] 문장 모델 로드 실패. 등록 문장 또는 인식 단어를 읽습니다: {error}",
+                              flush=True)
+                    if composer is not None:
+                        print(f"[수어] 문장 모델: {a.compose_llm} ({composer.device}, 상대 발화 문맥 사용)")
+                client = local_sign = LocalSignClient(device, phrases, save_dir=a.save_segments,
+                                                      composer=composer)
                 print(f"[수어] 기기 단독 인식: {len(device.labels) - 1}개 단어, 상황 문장 "
                       f"{len(phrases)}개" + (f" (모델에 없는 단어라 제외 {dropped}개)"
                                             if dropped else "") + ", 서버를 쓰지 않습니다")
@@ -646,7 +646,7 @@ def main():
         except (OSError, ValueError) as e:
             ap.error(str(e))
         recorder = SegmentRecorder()
-        if a.auto_segment:
+        if a.auto_segment or (a.auto_segment is None and a.recognize == "local"):
             from src.segmenter import ActivitySegmenter
             segmenter = ActivitySegmenter(viewpoint=a.viewpoint,
                                           rest_ratio=C.SEGMENT_REST_RATIO)
@@ -657,6 +657,8 @@ def main():
                     commands.put(line.strip().lower())
             threading.Thread(target=read_commands, daemon=True, name="cloud-controls").start()
             print("[수어] start / stop / cancel / quit 입력")
+        elif a.recognize == "local":
+            print("[수어] SPACE=수어 시작/종료, c=취소. 최종 문장 또는 인식 단어를 스피커로 출력합니다.")
         elif a.sign_backend == "device":
             print("[수어] SPACE=수어 시작/종료, c=취소. 인식된 단어를 스피커로 출력합니다.")
         else:
