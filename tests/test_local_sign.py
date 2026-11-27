@@ -80,10 +80,13 @@ result = run(client, sequence(hands=False))
 assert result["status"] == "no_sign" and not result["auto_speech"]
 silent = LocalSignClient(Recognizer([[.97, .01, .01, .01, .001]] * 5), phrases)
 assert run(silent) ["status"] == "no_sign"
-# Low-confidence detections still speak their CTC words without composition.
+# Low-confidence detections are still spoken: the matching phrase, or the words without a composer.
 weak = Recognizer(unsure)
 weak.calibration = {"threshold": 0.9}
 result = run(LocalSignClient(weak, phrases))
+assert result["source"] == "phrase" and result["speech"] == "목이 아파요." and result["auto_speech"]
+assert result["low_score"]
+result = run(LocalSignClient(weak))
 assert result["source"] == "words" and result["speech"] == "목 아프다" and result["auto_speech"]
 
 print("[OK] Local sign client: phrase list, context from speech, plain display, "
@@ -130,24 +133,45 @@ for answer in (TimeoutError(), "검사 123 아파요.", "검사가 아프지 않
                "검사가 아파요. 치료가 필요해요.", "검사예요.", "검사가 아파요?"):
     composer.answer = answer
     failed = validate_response(composed.translate(payload), payload)
-    assert failed["source"] == "words" and failed["issues"]
+    assert failed["source"] == "words" and failed["issues"], (answer, failed)
     assert failed["text"] == failed["speech"] == "검사 아프다" and failed["auto_speech"]
+
+# Natural sentences with connectives, helper verbs or nouns from the other person's question
+# are spoken; meaning changes above (number, negation, question, new nouns, dropped words) are not.
+for answer in ("검사하고 나서 아파요.", "검사가 아파서 힘들어요."):
+    composer.answer = answer
+    spoken = validate_response(composed.translate(payload), payload)
+    assert spoken["source"] == "language_model" and spoken["speech"] == answer, (answer, spoken)
+# A noun is allowed only when the other person said it.
+composer.answer = "머리 검사가 아파요."
+assert validate_response(composed.translate(payload), payload)["issues"] == ["added:머리"]
+composed.hear("머리 검사 받으셨어요?")
+asked = composed.payload(sequence(), "s", "d")
+spoken = validate_response(composed.translate(asked), asked)
+assert spoken["source"] == "language_model" and spoken["speech"] == "머리 검사가 아파요."
 
 travel = Recognizer(clear)
 travel.labels = ["<blank>", "머리", "목", "오다", "병원"]
 travel_composer = Composer()
 travel_client = LocalSignClient(travel, composer=travel_composer)
-for answer in ("병원에서 와요.", "병원에 오세요.", "병원에 오세요?"):
+for answer in ("병원에 와요.", "병원에 오세요."):
+    travel_composer.answer = answer
+    result = run(travel_client)
+    assert result["speech"] == answer and result["source"] == "language_model"
+for answer in ("병원에 오세요?", "병원에 안 와요.", "응급실에 와요."):
     travel_composer.answer = answer
     result = run(travel_client)
     assert result["speech"] == result["recognized_words"] == "병원 오다"
-    assert result["source"] == "words" and result["auto_speech"]
+    assert result["source"] == "words" and result["auto_speech"] and result["issues"], result
 
 unused = Composer(RuntimeError("reviewed phrases should bypass generation"))
 assert run(LocalSignClient(Recognizer(unsure), phrases, composer=unused))["source"] == "phrase"
 assert unused.calls == []
-assert run(LocalSignClient(weak, composer=unused))["source"] == "words"
-assert unused.calls == []
+# Uncertain recognition also becomes a sentence instead of bare words.
+low = Composer("목이 아파요.")
+result = run(LocalSignClient(weak, composer=low))
+assert result["source"] == "language_model" and result["speech"] == "목이 아파요."
+assert result["low_score"] and result["auto_speech"] and low.calls
 print("[OK] CTC composer: context snapshot, faithful sentence, spoken fallback")
 
 

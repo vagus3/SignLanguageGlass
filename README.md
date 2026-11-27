@@ -692,16 +692,39 @@ python tools/prepare_aihub3d.py data/raw/New_sample --out data/processed/aihub3d
 `--recognize local`은 먼저 카메라 영상에서 CTC가 읽은 단어를 확정합니다. 터미널의
 `[수어 인식]`에서 원래 단어와 점수를, `[수어 출력: ...]`에서 자막과 음성으로 전달된
 문장을 확인할 수 있습니다. 정확히 일치하는 등록 문장을 우선 사용합니다.
-`--compose-llm`을 지정하면 나머지 단어열은 최근 20초 내 상대 발화를 참고해 문장으로 만듭니다.
-문장 생성이 실패하거나 시간 제한을 넘기거나 단어 검사에서 걸리면 인식 단어를 그대로 읽습니다.
-인식 점수가 낮아도 검출된 단어를 읽으며, 검출된 단어가 없으면 발화하지 않습니다.
+`--compose-llm`을 지정하면 등록 문장과 정확히 맞지 않는 단어열은, 인식 점수가 낮더라도
+최근 20초 내 상대 발화를 참고해 문장으로 만들어 자막과 음성으로 냅니다.
+만든 문장은 인식 단어의 뜻을 지켰는지 검사합니다. 조사·어미·이음말이나 "가야 해요" 같은
+동사는 붙여도 되지만, 다음 경우에는 그 문장을 버리고 인식 단어를 그대로 읽습니다.
+
+- 인식 단어가 빠짐 ("머리가 아파요"인데 "빨리"가 빠짐)
+- 없던 부정 ("안 괜찮아요"), 없던 질문 ("아파요?"), 숫자 변화
+- 인식 단어나 상대 말에 없던 명사 ("치료가 필요해요")
+- 문장 생성 실패나 시간 초과 (15초)
+
+뜻은 같고 말만 다른 표현(노인→어르신, 원하다→"싶어요" 등)은 `src/local_sign.py`의
+`_SAME_MEANING` 표에서 허용합니다. 사람이 쓴 등록 문장·문장 짝 410개 중 6개만 이 검사에 걸립니다
+(`tests/test_faithful_check.py`). 검출된 단어가 없으면 발화하지 않습니다.
+터미널의 `[문장 생성: ...]`에 버린 문장과 이유가 나옵니다.
 로컬 CTC는 기본적으로 손 움직임으로 수어 구간을 자동으로 자릅니다. 시작과 종료를 직접
 지정하려면 `--no-auto-segment`를 추가하고 SPACE를 사용합니다.
 
 ```bash
-.venv/bin/python main.py --sign-backend cloud --recognize local --onnx models/words_v1/ctc.onnx --compose-llm Qwen/Qwen2.5-0.5B-Instruct --viewpoint webcam --video-captions --transcript
+.venv/bin/python main.py --sign-backend cloud --recognize local --onnx models/words_v1/ctc.onnx --compose-llm models/composer_3b_v2 --viewpoint webcam --video-captions --transcript
 ```
 
+문장 모델 비교 (병원 단어로 등록 문장에 없는 조합 17개, 맥북 GPU):
+
+| `--compose-llm` | 문장으로 말함 | 평균 / 최대 시간 | 문장 예 |
+|---|---|---|---|
+| `models/composer_3b_v2` (미세조정, 권장) | 13/17 | 3.8초 / 6.9초 | 목이 아파요. 콧물이 나요. |
+| `Qwen/Qwen2.5-3B-Instruct` | 16/17 | 3.4초 / 8.1초 | 목이 아파 콧물이 나요. (가끔 "자다요" 같은 틀린 활용) |
+| `models/composer_05b_v3` (미세조정) | 13/17 | 1.1초 / 2.9초 | 목이 아파요, 콧물이 아파요. |
+| `Qwen/Qwen2.5-0.5B-Instruct` | 11/17 | 0.9초 / 2.5초 | 걱정이 괜찮아요. |
+
+위 표는 검사 규칙에 같은 뜻 표현 세 개(자다→잠, 때문→"아파서", 혹시→묻는 말)를 더하기 전에 잰
+값입니다. `models/` 의 미세조정 모델은 저장소에 없으므로, 없으면 `Qwen/Qwen2.5-3B-Instruct`를 쓰세요.
+미세조정 모델(`composer.json` 이 있는 폴더)은 학습 때 입력 형식을, 기본 모델은 통역 형식을 자동으로 씁니다.
 문장 모델은 미리 내려받아야 하며 PyTorch와 transformers가 필요합니다.
 CUDA GPU가 있으면 자동으로 사용합니다. 문장 모델을 지정하지 않으면 등록 문장 또는 인식 단어를 읽습니다.
 
