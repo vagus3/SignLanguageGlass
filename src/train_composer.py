@@ -39,8 +39,7 @@ def load_pairs():
 def encode(translator, pair, mapping, with_answer=True):
     """(입력 글자 번호, 정답 글자 번호) — LocalTranslator 가 실행 때 만드는 것과 같은 입력."""
     tok = translator.tokenizer
-    messages = [{"role": "user", "content": translator.prompt(pair["glosses"], mapping,
-                                                               pair.get("context"))}]
+    messages = translator.messages(pair["glosses"], mapping, pair.get("context"))
     prompt = tok.apply_chat_template(messages, add_generation_prompt=True, tokenize=True)
     answer = tok(pair["text"] + "<|im_end|>").input_ids if with_answer else []
     return prompt, answer
@@ -92,7 +91,9 @@ def main():
     # 평가는 덧붙인 단어까지 세는 엄격한 검사로 (앱은 덧붙임을 허용하지만 비교 기준은 유지).
     glossary = glasses_glossary(vocabulary, phrases, strict_additions=True)
     # 예시 문장은 학습 짝에서만 고릅니다 (확인용 짝의 답을 보여 주지 않음).
-    translator = LocalTranslator(args.base, examples=train_pairs)
+    # 기본 모델에서 출발하지만 학습 형식("tuned")으로 고정합니다. 실행할 때 composer.json 이 있으면
+    # LocalTranslator 가 같은 형식을 고릅니다.
+    translator = LocalTranslator(args.base, examples=train_pairs, prompt_style="tuned")
     translator.llm.to(torch.bfloat16)
     before, before_rows = judge(translator, held, glossary)
     print(f"미세조정 전 (확인용 {len(held)}개): 정답과 같음 {before['exact']:.0%}, "

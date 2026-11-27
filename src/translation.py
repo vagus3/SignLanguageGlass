@@ -274,6 +274,15 @@ class VllmTranslator:
 LOCAL_MODEL = "Qwen/Qwen2.5-3B-Instruct"
 
 
+# 기본(미세조정 안 한) 문장 모델용 시스템 지시. 미세조정 모델은 LocalTranslator._tuned_prompt.
+PLAIN_SYSTEM = ("당신은 한국수어 사용자의 말을 한국어로 옮기는 통역기입니다. "
+                "입력 단어열을 말한 사람의 입장에서 통역문만 출력하세요. "
+                "상대방의 질문에 직접 답하거나 수어 사용자에게 조언하지 마세요. "
+                "입력 단어의 순서와 의미를 보존하고 조사와 어미를 붙이세요. "
+                "입력에 없는 행동, 원인, 미래 사건을 만들지 마세요. "
+                "관계가 불명확한 단어들은 짧은 문장으로 나누어 표현하세요.")
+
+
 class LocalTranslator:
     """이 기기에서 도는 Qwen (transformers). 인터넷 없이 단어열 + 상대의 말 -> 한 문장.
 
@@ -284,7 +293,7 @@ class LocalTranslator:
     accepts_context = True
 
     def __init__(self, model=None, device=None, examples=(), max_new_tokens=48,
-                 local_only=True):
+                 local_only=True, prompt_style=None):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
         self.model = model or os.environ.get("LOCAL_LLM_MODEL", LOCAL_MODEL)
@@ -304,6 +313,12 @@ class LocalTranslator:
             self.llm = PeftModel.from_pretrained(self.llm, adapter).merge_and_unload().eval()
             self.model = f"{self.model}+{adapter.parent.name}"
         self.examples, self.max_new_tokens = list(examples), max_new_tokens
+        # 미세조정한 문장 모델(composer.json 폴더)은 학습 때 본 형식("tuned")이어야 제 성능이
+        # 납니다. 형식이 달라지면 3B v2 의 정답 일치가 68%에서 52%로 떨어졌습니다.
+        # 기본 모델은 시스템 지시와 '통역:' 예시를 쓰는 형식("plain")을 씁니다.
+        if prompt_style not in (None, "tuned", "plain"):
+            raise ValueError("prompt_style 은 'tuned' 또는 'plain' 입니다")
+        self.prompt_style = prompt_style or ("tuned" if adapter is not None else "plain")
         self.max_seconds = None     # 한 문장에 쓸 수 있는 시간(초). 넘기면 TimeoutError
 
     def _shots(self, words, limit=6):
@@ -311,6 +326,8 @@ class LocalTranslator:
         return scored[:limit]
 
     def prompt(self, glosses, mapping, context=None):
+        if self.prompt_style == "tuned":
+            return self._tuned_prompt(glosses, mapping, context)
         words = [mapping[g] for g in glosses]
         lines = ["단어: 피곤하다 걱정\n통역: 피곤하고 걱정돼요.",
                  "단어: 목 아프다\n통역: 목이 아파요.",
@@ -325,17 +342,32 @@ class LocalTranslator:
         lines.append(f"단어: {' '.join(words)}\n통역:")
         return "\n\n".join(lines)
 
+    def _tuned_prompt(self, glosses, mapping, context=None):
+        """src.train_composer 가 학습한 형식. 바꾸면 기존 문장 모델을 다시 학습해야 합니다."""
+        words = [mapping[g] for g in glosses]
+        lines = ["착용자가 한국수어로 말한 단어열을, 상대에게 들려줄 자연스러운 한국어 문장으로 "
+                 "바꾸세요. 응급·병원 상황입니다. 입력 단어의 뜻만 쓰세요. 입력에 없는 사건, 증상, "
+                 "요청, 사람, 숫자, 장소, 부정/긍정을 덧붙이지 마세요. 조사와 어미만 자연스럽게 "
+                 "붙이세요. '상대가 방금 한 말'은 무엇에 대한 대답인지 알기 위한 참고이며, 그 말을 "
+                 "따라 하거나 이어 쓰지 마세요. 문장만 답하세요."]
+        for example in self._shots(glosses):
+            lines.append(f"단어: {' '.join(mapping.get(g, g) for g in example['glosses'])}\n"
+                         f"문장: {example['text']}")
+        if context:
+            lines.append(f"상대가 방금 한 말: {context}")
+        lines.append(f"단어: {' '.join(words)}\n문장:")
+        return "\n\n".join(lines)
+
+    def messages(self, glosses, mapping, context=None):
+        """채팅 형식 입력. 학습(src.train_composer)과 실행이 같은 함수를 씁니다."""
+        user = {"role": "user", "content": self.prompt(glosses, mapping, context)}
+        if self.prompt_style == "tuned":
+            return [user]
+        return [{"role": "system", "content": PLAIN_SYSTEM}, user]
+
     def translate(self, glosses, mapping, context=None):
         import torch
-        messages = [
-            {"role": "system", "content":
-             "당신은 한국수어 사용자의 말을 한국어로 옮기는 통역기입니다. "
-             "입력 단어열을 말한 사람의 입장에서 통역문만 출력하세요. "
-             "상대방의 질문에 직접 답하거나 수어 사용자에게 조언하지 마세요. "
-             "입력 단어의 순서와 의미를 보존하고 조사와 어미를 붙이세요. "
-             "입력에 없는 행동, 원인, 미래 사건을 만들지 마세요. "
-             "관계가 불명확한 단어들은 짧은 문장으로 나누어 표현하세요."},
-            {"role": "user", "content": self.prompt(glosses, mapping, context)}]
+        messages = self.messages(glosses, mapping, context)
         ids = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True,
                                                  return_tensors="pt").to(self.device)
         eos = {self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|im_end|>")}
