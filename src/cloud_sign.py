@@ -250,6 +250,7 @@ class CloudWorker(threading.Thread):
         self.jobs, self.results = queue.Queue(maxsize=1), queue.Queue()
         self.lock = threading.Lock()
         self.pending = None
+        self.word_fallback = None
         self.deadline = 0
         self.seen = deque(maxlen=256)
         self._quit = threading.Event()
@@ -257,7 +258,8 @@ class CloudWorker(threading.Thread):
     @property
     def busy(self):
         with self.lock:
-            if self.pending is not None and clock.now() > self.deadline + self.GRACE:
+            if (self.pending is not None and self.word_fallback is None
+                    and clock.now() > self.deadline + self.GRACE):
                 # 기기 안 인식은 제한시간이 없어서, 느려지면 영원히 '처리 중'에 갇힙니다.
                 # 마감이 지나면 이 요청을 버리고(늦게 오는 결과는 무시) 다음 입력을 받습니다.
                 self.seen.append(self.pending)
@@ -292,6 +294,7 @@ class CloudWorker(threading.Thread):
         with self.lock:
             if self.pending:
                 self.seen.append(self.pending)
+                self.word_fallback = None
 
     def stop(self):
         self.cancel()
@@ -310,13 +313,22 @@ class CloudWorker(threading.Thread):
                 self.results.put((segment_id, {}, origin_t, deadline))
                 continue
             start = clock.now()
+            fallback = None
             try:
                 payload = self._payload(sequence, segment_id)
+                word_result = getattr(self.client, "word_result", None)
+                if word_result is not None:
+                    candidate = word_result(payload)
+                    if candidate["auto_speech"]:
+                        fallback = candidate
+                        with self.lock:
+                            if segment_id == self.pending and segment_id not in self.seen:
+                                self.word_fallback = (fallback, origin_t)
                 start = clock.now()
                 result = self.client.translate(payload)
             except Exception as error:
-                result = {"status": "unavailable", "text": "", "auto_speech": False,
-                          "segment_id": segment_id, "mock": False, "error": describe(error)}
+                result = fallback or {"status": "unavailable", "text": "", "auto_speech": False,
+                                      "segment_id": segment_id, "mock": False, "error": describe(error)}
             if self.stats:
                 self.stats.add("cloud_roundtrip", (clock.now() - start) * 1000)
                 for name, value in result.get("timings_ms", {}).items():
@@ -325,12 +337,19 @@ class CloudWorker(threading.Thread):
             self.results.put((segment_id, result, origin_t, deadline))
 
     def poll(self):
-        try:
-            segment_id, result, origin_t, deadline = self.results.get_nowait()
-        except queue.Empty:
-            return None
         with self.lock:
             now = clock.now()
+            if self.word_fallback is not None and now > self.deadline:
+                fallback = self.word_fallback
+                self.seen.append(self.pending)
+                self.pending = self.word_fallback = None
+                return fallback
+            try:
+                segment_id, result, origin_t, deadline = self.results.get_nowait()
+            except queue.Empty:
+                return None
+            if segment_id != self.pending and "recognized_words" in result:
+                return None     # One result per local segment, including deadline fallback.
             if self._quit.is_set():
                 reason = "종료 중"
             elif segment_id in self.seen:
@@ -342,7 +361,7 @@ class CloudWorker(threading.Thread):
             else:
                 reason = None
             if segment_id == self.pending:
-                self.pending = None
+                self.pending = self.word_fallback = None
             self.seen.append(segment_id)
         if reason:
             return {"status": "expired", "text": "", "auto_speech": False, "reason": reason}, origin_t

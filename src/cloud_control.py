@@ -65,7 +65,10 @@ class CloudController:
         status = result["status"]
         if status == "ok":
             text = result["text"]
-            self.out("[수어]" if self.backend == "device" else "[cloud 번역]", text)
+            if "recognized_words" in result:
+                self.out(f"[수어 출력: {result['source']}]", text)
+            else:
+                self.out("[수어]" if self.backend == "device" else "[cloud 번역]", text)
             self.hud.own(text)
             self.hud.status(READY)
             self.stats.since("cloud_response", origin_t)

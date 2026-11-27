@@ -4,12 +4,8 @@ CloudWorker 가 쓰는 클라이언트와 같은 모양(payload, translate, time
 CloudClient 자리에 그대로 들어갑니다. 네트워크는 쓰지 않습니다.
 
 1. OnnxRecognizer 로 구간을 인식합니다 (src/ctc_runtime.py).
-2. 상황 문장 목록(assets/phrases/*.json)이 있으면 decode_with_phrases 로 보정합니다.
-   상대가 방금 한 말(heard)은 그 말에 대한 대답일 법한 문장에 가산점을 줍니다.
-3. 목록 밖 단어열은 composer가 있으면 상대 발화와 함께 문장으로 만듭니다.
-   composer가 없으면 인식된 단어를 그대로 보여 줍니다.
-
-문맥으로 고른 문장도 화면에 그대로 보여 줍니다. 점수가 speak_min 이상이면 소리로 말합니다.
+2. CTC가 읽은 단어열에 정확히 맞는 등록 문장을 먼저 찾습니다.
+3. 나머지는 상대 발화를 참고해 문장으로 만들고, 실패하면 인식 단어를 읽습니다.
 """
 import json
 import re
@@ -18,10 +14,12 @@ from pathlib import Path
 import numpy as np
 
 from src import clock
-from src.ctc_runtime import GLOSS_VERSION, decode_with_phrases
+from src.ctc_runtime import GLOSS_VERSION, greedy_decode
 from src.pose_sequence import FEATURE_SETS
 
 _VARIANT = re.compile(r"_\d+$")      # 같은 이름의 다른 수어를 구분하는 번호 (검사_0029)
+_NEUTRAL_PARTICLES = {"은", "는", "이", "가", "을", "를", "요"}
+_STATEMENT_ENDINGS = {"다", "아요", "어요", "습니다", "ᆸ니다", "ᆫ다", "는다"}
 
 
 def load_phrases(path, labels):
@@ -62,14 +60,13 @@ def plain_words(glosses):
 class LocalSignClient:
     timeout = 10
 
-    def __init__(self, recognizer, phrases=(), *, bonus=1.0, heard_seconds=20.0, save_dir=None,
-                 speak_min=0.0, composer=None):
+    def __init__(self, recognizer, phrases=(), *, heard_seconds=20.0, save_dir=None, composer=None):
         """save_dir: 인식한 구간의 좌표와 결과를 남길 폴더 (실제 카메라 문제를 살펴볼 때)."""
         self.save_dir = Path(save_dir) if save_dir else None
-        self.speak_min = speak_min      # 이 점수 이상이면 소리로 말함 (1 보다 크면 말하지 않음)
-        self.recognizer, self.phrases = recognizer, list(phrases)
-        self.bonus, self.heard_seconds = bonus, heard_seconds
-        self.texts = {tuple(p["glosses"]): p["text"] for p in self.phrases}
+        self.recognizer = recognizer
+        self.heard_seconds = heard_seconds
+        phrases = list(phrases)
+        self.texts = {tuple(p["glosses"]): p["text"] for p in phrases}
         self._heard = ("", float("-inf"))
         self.composer = composer
         if composer is not None:
@@ -78,8 +75,8 @@ class LocalSignClient:
             kinds = {g: "negation" for g, word in meanings.items()
                      if word in ("없다", "아니다", "못하다")}
             kinds.update({g: "place" for g, word in meanings.items() if word == "병원"})
-            self.glossary = Glossary(meanings, kinds=kinds,
-                                    stems=learn_stems(meanings, self.phrases))
+            self.glossary = Glossary(meanings, kinds=kinds, stems=learn_stems(meanings, phrases))
+            self._kiwi = None
             self.timeout = 30
             composer.max_seconds = min(getattr(composer, "max_seconds", None) or 15.0, 15.0)
 
@@ -93,17 +90,19 @@ class LocalSignClient:
         return text if now - at <= self.heard_seconds else ""
 
     def recognize(self, sequence):
-        """(단어열, 점수, 출처). 출처: "greedy" = 본 그대로, "phrase" = 문맥으로 고름."""
+        """Decode the visual model output before consulting the conversation."""
         sequence.validate()
         if not sequence.mask[:, :42].any():
-            return [], 0.0, "greedy"
+            return [], 0.0
         features = FEATURE_SETS[self.recognizer.feature_set][0](sequence)
-        return decode_with_phrases(self.recognizer.log_probs(features), self.recognizer.labels,
-                                   self.phrases, bonus=self.bonus, heard=self.heard())
+        return greedy_decode(np.exp(self.recognizer.log_probs(features)), self.recognizer.labels)
 
     def payload(self, sequence, session_id, segment_id, stats=None):
         start = clock.now()
-        glosses, score, source = self.recognize(sequence)
+        context = self.heard()
+        glosses, score = self.recognize(sequence)
+        if glosses:
+            print(f"[수어 인식] {plain_words(glosses)} (CTC 점수 {score:.3f})", flush=True)
         if stats:
             stats.add("device_recognize", (clock.now() - start) * 1000)
         if self.save_dir:
@@ -113,45 +112,68 @@ class LocalSignClient:
                     else f"{session_id}_{segment_id}"
                 sequence.save(self.save_dir / f"{name}.npz")
                 (self.save_dir / f"{name}.json").write_text(json.dumps(
-                    {"glosses": list(glosses), "score": float(score), "source": source,
+                    {"glosses": list(glosses), "score": float(score), "source": "greedy",
                      "frames": len(sequence.timestamps),
                      "seconds": float(sequence.timestamps[-1] - sequence.timestamps[0])},
                     ensure_ascii=False), encoding="utf-8")
             except (OSError, ValueError) as error:
                 print(f"[수어] 구간 저장 실패: {error}")
         return {"version": GLOSS_VERSION, "session_id": session_id, "segment_id": segment_id,
-                "glosses": list(glosses), "score": float(score), "source": source,
-                "context": self.heard()}
+                "glosses": list(glosses), "score": float(score), "source": "greedy", "context": context}
+
+    def word_result(self, payload):
+        """A valid local recognition result, also usable when composition times out."""
+        glosses = payload["glosses"]
+        words = plain_words(glosses)
+        result = {key: payload[key] for key in ("version", "session_id", "segment_id")}
+        result.update(glosses=glosses, recognized_words=words, recognition_score=payload["score"],
+                      status="ok" if words else "no_sign", text=words, speech=words,
+                      source="words" if words else "", auto_speech=bool(words), mock=False,
+                      timings_ms={})
+        return result
+
+    def _content(self, text):
+        if self._kiwi is None:
+            from kiwipiepy import Kiwi
+            self._kiwi = Kiwi(num_workers=1)
+        # Ignore only ordinary grammatical insertions. Direction, tense and
+        # sentence mood (e.g. 에서, 세요 and ?) need evidence in the input.
+        parts = []
+        for token in self._kiwi.tokenize(text):
+            form, tag = token.form, token.tag
+            if (tag.startswith("J") and form in _NEUTRAL_PARTICLES
+                    or tag == "EF" and form in _STATEMENT_ENDINGS
+                    or tag in ("SF", "SP") and form in (".", ",")):
+                continue
+            parts.append(form)
+        return "".join(parts)
 
     def translate(self, payload):
-        glosses = payload["glosses"]
-        result = {key: payload[key] for key in ("version", "session_id", "segment_id")}
-        result.update(glosses=glosses, text="", source="", auto_speech=False, mock=False,
-                      timings_ms={})
+        result = self.word_result(payload)
         threshold = self.recognizer.calibration.get("threshold")
-        if not glosses:
-            result["status"] = "no_sign"
-        elif (payload["source"] == "greedy" and threshold is not None
-              and payload["score"] < threshold):
-            result["status"] = "uncertain"
-        else:
-            text = self.texts.get(tuple(glosses))
-            if text is None and self.composer is not None:
-                from src.translation import compose
-                start = clock.now()
-                made = compose(glosses, self.glossary, self.composer,
-                               context=payload.get("context") or None)
-                result.update(status=made.status, text=made.text, source=made.source,
-                              issues=list(made.issues))
-                result["timings_ms"]["language"] = (clock.now() - start) * 1000
-                if made.status == "ok":
-                    result.update(speech=made.text,
-                                  auto_speech=bool(payload["score"] >= self.speak_min))
-                print(f"[문장 생성: {made.source}] {' '.join(glosses)} → {made.text}"
-                      + (f" ({', '.join(made.issues)})" if made.issues else ""), flush=True)
-                return result
-            spoken = text or plain_words(glosses)
-            result.update(status="ok", source="phrase" if text else "words",
-                          text=spoken, speech=spoken,
-                          auto_speech=bool(payload["score"] >= self.speak_min))
+        glosses = result["glosses"]
+        if not glosses or (threshold is not None and payload["score"] < threshold):
+            return result
+        text = self.texts.get(tuple(glosses))
+        if text:
+            result.update(text=text, speech=text, source="phrase")
+        elif self.composer is not None:
+            from src.translation import compose
+            start = clock.now()
+            made = compose(glosses, self.glossary, self.composer,
+                           context=payload.get("context") or None)
+            issues = list(made.issues)
+            if made.status == "ok":
+                try:
+                    expected = self._content(result["recognized_words"])
+                    if expected and self._content(made.text) == expected:
+                        result.update(text=made.text, speech=made.text, source=made.source)
+                    else:
+                        issues.append("changed_words")
+                except Exception as error:
+                    issues.append(f"word_check:{type(error).__name__}")
+            result["issues"] = issues
+            result["timings_ms"]["language"] = (clock.now() - start) * 1000
+            print(f"[문장 생성: {result['source']}] {result['text']}"
+                  + (f" ({', '.join(issues)})" if issues else ""), flush=True)
         return result
